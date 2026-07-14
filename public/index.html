@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ISRC Lookup — Sout Network</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #101216;
+    --panel: #191D24;
+    --line: #2A2F38;
+    --text: #E8E6E1;
+    --muted: #8B9099;
+    --card: #EFEDE6;
+    --card-line: #D8D4C8;
+    --ink: #1F5F5B;        /* official stamp ink */
+    --ink-soft: #EAF1EF;
+    --danger: #B4544A;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Archivo', sans-serif;
+    min-height: 100vh;
+    padding: 48px 20px 80px;
+  }
+  .wrap { max-width: 680px; margin: 0 auto; }
+
+  /* ---- Header ---- */
+  .brand {
+    display: flex; align-items: baseline; gap: 12px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 18px; margin-bottom: 36px;
+  }
+  .brand .name { font-weight: 700; letter-spacing: 0.14em; font-size: 13px; text-transform: uppercase; }
+  .brand .tool { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--muted); }
+
+  h1 { font-size: 26px; font-weight: 600; margin-bottom: 8px; }
+  .sub { color: var(--muted); font-size: 14px; margin-bottom: 28px; line-height: 1.6; }
+
+  /* ---- Search ---- */
+  .search { display: flex; gap: 10px; }
+  .search input {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 15px 16px;
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 16px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    outline: none;
+    transition: border-color .15s;
+  }
+  .search input:focus { border-color: var(--ink); }
+  .search input::placeholder { color: #565B64; letter-spacing: 0.08em; }
+  .search button {
+    background: var(--text);
+    color: var(--bg);
+    border: none;
+    border-radius: 8px;
+    padding: 0 26px;
+    font-family: 'Archivo', sans-serif;
+    font-weight: 600;
+    font-size: 15px;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .search button:hover { opacity: .85; }
+  .search button:disabled { opacity: .4; cursor: default; }
+
+  .status {
+    margin-top: 16px; font-size: 14px; color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace; min-height: 20px;
+  }
+  .status.error { color: var(--danger); }
+
+  /* ---- Result card: the track passport ---- */
+  .card {
+    margin-top: 32px;
+    background: var(--card);
+    color: #1B1A17;
+    border-radius: 12px;
+    overflow: hidden;
+    display: none;
+    animation: rise .35s ease both;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .card { animation: none; } }
+
+  .card-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 22px;
+    border-bottom: 1px dashed var(--card-line);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--ink);
+  }
+  .card-body { display: flex; gap: 22px; padding: 22px; }
+  .art {
+    width: 148px; height: 148px; border-radius: 8px; flex-shrink: 0;
+    object-fit: cover; background: var(--card-line);
+  }
+  .meta { flex: 1; min-width: 0; }
+  .meta .title { font-size: 21px; font-weight: 700; line-height: 1.25; }
+  .meta .artist { font-size: 15px; color: #4A4842; margin-top: 4px; }
+  .meta .album { font-size: 13px; color: #6E6B62; margin-top: 2px; }
+
+  .isrc-stamp {
+    display: inline-flex; gap: 0;
+    margin-top: 14px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600; font-size: 15px; letter-spacing: 0.28em;
+    color: var(--ink);
+    border: 1.5px solid var(--ink);
+    border-radius: 4px;
+    padding: 6px 10px 6px 14px;
+    background: var(--ink-soft);
+  }
+
+  .facts {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 1px; background: var(--card-line);
+    border-top: 1px dashed var(--card-line);
+  }
+  .fact { background: var(--card); padding: 12px 22px; }
+  .fact .k {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    letter-spacing: 0.14em; text-transform: uppercase; color: #8A867B;
+  }
+  .fact .v { font-size: 14px; font-weight: 600; margin-top: 3px; word-break: break-all; }
+
+  /* ---- Platform links ---- */
+  .links { border-top: 1px dashed var(--card-line); }
+  .link-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 13px 22px;
+    border-bottom: 1px solid #E4E1D7;
+    font-size: 14px;
+  }
+  .link-row:last-child { border-bottom: none; }
+  .link-row .plat { font-weight: 600; width: 110px; flex-shrink: 0; }
+  .link-row a {
+    flex: 1; min-width: 0;
+    color: var(--ink); text-decoration: none;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .link-row a:hover { text-decoration: underline; }
+  .link-row .copy {
+    border: 1px solid var(--card-line); background: transparent;
+    border-radius: 6px; padding: 5px 12px;
+    font-family: 'Archivo', sans-serif; font-size: 12px; font-weight: 600;
+    color: #4A4842; cursor: pointer;
+  }
+  .link-row .copy:hover { background: #E7E4DA; }
+  .not-found { color: #A09C90; font-size: 13px; flex: 1; }
+
+  /* ---- Preview ---- */
+  .preview {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 22px;
+    border-top: 1px dashed var(--card-line);
+    background: #E9E6DC;
+  }
+  .preview button {
+    width: 38px; height: 38px; border-radius: 50%;
+    border: none; background: var(--ink); color: #fff;
+    font-size: 14px; cursor: pointer;
+  }
+  .preview span { font-size: 13px; color: #6E6B62; }
+
+  @media (max-width: 560px) {
+    .card-body { flex-direction: column; }
+    .art { width: 100%; height: auto; aspect-ratio: 1; }
+    .link-row .plat { width: 84px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <span class="name">Sout Network</span>
+    <span class="tool">/ isrc-lookup</span>
+  </div>
+
+  <h1>Find a track by its ISRC</h1>
+  <p class="sub">Enter a 12-character ISRC code to pull the track's details, artwork and streaming links from Spotify, Deezer and iTunes.</p>
+
+  <div class="search">
+    <input id="isrc" placeholder="e.g. USUM72409273" maxlength="15" spellcheck="false" autocomplete="off">
+    <button id="go">Look up</button>
+  </div>
+  <div class="status" id="status"></div>
+
+  <div class="card" id="card">
+    <div class="card-head">
+      <span>International Standard Recording Code</span>
+      <span id="head-date"></span>
+    </div>
+    <div class="card-body">
+      <img class="art" id="art" alt="Cover artwork">
+      <div class="meta">
+        <div class="title" id="t-title"></div>
+        <div class="artist" id="t-artist"></div>
+        <div class="album" id="t-album"></div>
+        <div class="isrc-stamp" id="t-isrc"></div>
+      </div>
+    </div>
+    <div class="facts" id="facts"></div>
+    <div class="preview" id="preview" style="display:none">
+      <button id="play-btn" aria-label="Play preview">&#9654;</button>
+      <span>30-second audio preview</span>
+      <audio id="audio"></audio>
+    </div>
+    <div class="links" id="links"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const input = $('isrc'), goBtn = $('go'), statusEl = $('status'), card = $('card');
+
+function fmtDuration(ms) {
+  if (!ms) return null;
+  const s = Math.round(ms / 1000);
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+function setStatus(msg, isError) {
+  statusEl.textContent = msg || '';
+  statusEl.className = 'status' + (isError ? ' error' : '');
+}
+
+async function lookup() {
+  const isrc = input.value.trim().toUpperCase().replace(/[-\s]/g, '');
+  if (!isrc) return;
+  card.style.display = 'none';
+  goBtn.disabled = true;
+  setStatus('Searching platforms…');
+
+  try {
+    const res = await fetch('/api/lookup?isrc=' + encodeURIComponent(isrc));
+    const data = await res.json();
+    if (!res.ok) { setStatus(data.error + (data.detail ? ' — ' + data.detail : ''), true); return; }
+    render(data);
+    setStatus('');
+  } catch (e) {
+    setStatus('Could not reach the server. Please try again.', true);
+  } finally {
+    goBtn.disabled = false;
+  }
+}
+
+function render({ core, links }) {
+  $('t-title').textContent = core.title || 'Unknown title';
+  $('t-artist').textContent = (core.artists || []).join(', ');
+  $('t-album').textContent = core.album ? core.album + (core.albumType ? ' · ' + core.albumType : '') : '';
+  $('t-isrc').textContent = core.isrc;
+  $('head-date').textContent = core.releaseDate || '';
+  const art = $('art');
+  if (core.artwork) { art.src = core.artwork; art.style.display = ''; } else { art.style.display = 'none'; }
+
+  // Facts grid
+  const facts = [
+    ['Label', core.label],
+    ['UPC', core.upc],
+    ['Duration', fmtDuration(core.durationMs)],
+    ['Release date', core.releaseDate],
+    ['Explicit', core.explicit === null ? null : (core.explicit ? 'Yes' : 'No')],
+    ['BPM', core.bpm]
+  ].filter(f => f[1]);
+  $('facts').innerHTML = facts.map(f =>
+    '<div class="fact"><div class="k">' + f[0] + '</div><div class="v">' + f[1] + '</div></div>'
+  ).join('');
+
+  // Preview
+  const preview = $('preview'), audio = $('audio'), playBtn = $('play-btn');
+  if (core.preview) {
+    preview.style.display = '';
+    audio.src = core.preview;
+    audio.pause();
+    playBtn.innerHTML = '&#9654;';
+  } else {
+    preview.style.display = 'none';
+  }
+
+  // Links
+  const rows = [
+    ['Spotify', links.spotify],
+    ['Apple Music', links.appleMusic],
+    ['Deezer', links.deezer],
+    ['YouTube Music', links.youtubeMusic],
+    ['YouTube', links.youtube],
+    ['Amazon Music', links.amazonMusic],
+    ['Tidal', links.tidal],
+    ['Anghami', links.anghami],
+    ['All platforms', links.songlink]
+  ].filter(([plat, url]) => url || ['Spotify', 'Apple Music', 'Deezer'].includes(plat));
+  $('links').innerHTML = rows.map(([plat, url]) => {
+    if (!url) return '<div class="link-row"><span class="plat">' + plat + '</span><span class="not-found">Not found on this platform</span></div>';
+    return '<div class="link-row">' +
+      '<span class="plat">' + plat + '</span>' +
+      '<a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>' +
+      '<button class="copy" data-url="' + url + '">Copy</button>' +
+      '</div>';
+  }).join('');
+
+  card.style.display = 'block';
+}
+
+// Events
+goBtn.addEventListener('click', lookup);
+input.addEventListener('keydown', e => { if (e.key === 'Enter') lookup(); });
+
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('copy')) {
+    navigator.clipboard.writeText(e.target.dataset.url).then(() => {
+      e.target.textContent = 'Copied';
+      setTimeout(() => e.target.textContent = 'Copy', 1500);
+    });
+  }
+});
+
+$('play-btn').addEventListener('click', () => {
+  const audio = $('audio'), btn = $('play-btn');
+  if (audio.paused) { audio.play(); btn.innerHTML = '&#10074;&#10074;'; }
+  else { audio.pause(); btn.innerHTML = '&#9654;'; }
+});
+$('audio').addEventListener('ended', () => { $('play-btn').innerHTML = '&#9654;'; });
+</script>
+</body>
+</html>
