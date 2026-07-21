@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ISRC Lookup — Sout Network</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0E1013;
+    --panel: #171A1F;
+    --panel-2: #1E222A;
+    --line: #2A2F38;
+    --line-soft: #23272F;
+    --text: #ECEAE5;
+    --muted: #8A9099;
+    --accent: #2ED573;
+    --accent-dim: #1C6B3E;
+    --link: #6BA9FF;
+    --danger: #C86A60;
+    --row-hover: #212632;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    padding: 32px 18px 90px;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+
+  .brand {
+    display: flex; align-items: baseline; gap: 10px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 14px; margin-bottom: 22px;
+  }
+  .brand .name { font-weight: 700; letter-spacing: 0.02em; font-size: 14px; }
+  .brand .tool {
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--muted);
+  }
+
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 22px; line-height: 1.6; }
+
+  /* ---- Search ---- */
+  .search { display: flex; gap: 8px; }
+  .search input {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 15px 16px;
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 17px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    outline: none;
+    transition: border-color .12s;
+  }
+  .search input:focus { border-color: var(--accent-dim); }
+  .search input::placeholder { color: #565B64; }
+  .search button {
+    background: var(--text);
+    color: var(--bg);
+    border: none;
+    border-radius: 9px;
+    padding: 0 26px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 15px;
+    cursor: pointer;
+    transition: opacity .12s;
+  }
+  .search button:hover { opacity: .85; }
+  .search button:disabled { opacity: .4; cursor: default; }
+
+  .status {
+    margin-top: 12px; font-size: 13px; color: var(--muted);
+    min-height: 18px;
+  }
+  .status.error { color: var(--danger); }
+  .spinner {
+    display: inline-block; width: 13px; height: 13px;
+    border: 2px solid var(--line); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .7s linear infinite;
+    vertical-align: -2px; margin-right: 7px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- Result ---- */
+  .card {
+    margin-top: 22px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    display: none;
+  }
+  .card.show { display: block; }
+
+  .track-head {
+    display: flex; gap: 14px; align-items: center;
+    padding: 16px;
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--panel-2);
+  }
+  .art {
+    width: 60px; height: 60px; border-radius: 8px; flex-shrink: 0;
+    object-fit: cover; background: var(--line);
+  }
+  .track-meta { min-width: 0; flex: 1; }
+  .track-meta .title {
+    font-size: 16px; font-weight: 600; line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .track-meta .artist {
+    font-size: 13px; color: var(--muted); margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .track-meta .isrc {
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+    color: #6E7580; margin-top: 5px; letter-spacing: 0.08em;
+  }
+
+  /* ---- Platform rows ---- */
+  .rows { padding: 6px; }
+  .row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background .1s;
+    user-select: none;
+  }
+  .row.available:hover { background: var(--row-hover); }
+  .row.available:active { background: #262C38; }
+  .row .plat {
+    font-weight: 600; font-size: 14px;
+    width: 130px; flex-shrink: 0;
+  }
+  .row .url {
+    flex: 1; min-width: 0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11.5px;
+    color: var(--link);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .row .copy-tag {
+    flex-shrink: 0;
+    font-size: 12px; font-weight: 600;
+    color: var(--muted);
+    display: flex; align-items: center; gap: 5px;
+    min-width: 74px; justify-content: flex-end;
+  }
+  .row.copied .copy-tag { color: var(--accent); }
+  .row.copied { background: rgba(46,213,115,0.08); }
+  .copy-ico { width: 14px; height: 14px; }
+
+  .row.unavailable { cursor: default; opacity: 0.55; }
+  .row.unavailable .plat { color: var(--muted); font-weight: 500; }
+  .row.unavailable .na {
+    flex: 1; font-size: 12.5px; color: #6E7580;
+  }
+
+  .hint {
+    text-align: center; font-size: 12px; color: #626873;
+    padding: 12px 0 4px;
+  }
+  kbd {
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 4px; padding: 1px 6px; font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px; color: var(--muted);
+  }
+
+  @media (max-width: 520px) {
+    .row .plat { width: 96px; }
+    .row .url { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <span class="name">Sout Network</span>
+    <span class="tool">/ isrc-lookup</span>
+  </div>
+
+  <h1>Find a track by ISRC</h1>
+  <p class="sub">Type a code and press Enter. You'll see which platforms the track is on — click any platform to copy its link and paste it straight into Believe.</p>
+
+  <div class="search">
+    <input id="isrc" placeholder="USUM72409273" maxlength="15" spellcheck="false" autocomplete="off" autofocus>
+    <button id="go">Look up</button>
+  </div>
+  <div class="status" id="status"></div>
+
+  <div class="card" id="card">
+    <div class="track-head">
+      <img class="art" id="art" alt="">
+      <div class="track-meta">
+        <div class="title" id="t-title"></div>
+        <div class="artist" id="t-artist"></div>
+        <div class="isrc" id="t-isrc"></div>
+      </div>
+    </div>
+    <div class="rows" id="rows"></div>
+    <div class="hint">Click any platform to copy its link · Press <kbd>Enter</kbd> to look up the next code</div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const input = $('isrc'), goBtn = $('go'), statusEl = $('status'), card = $('card');
+
+const PLATFORMS = [
+  ['spotify',      'Spotify'],
+  ['appleMusic',   'Apple Music'],
+  ['youtubeMusic', 'YouTube Music'],
+  ['youtube',      'YouTube'],
+  ['anghami',      'Anghami'],
+  ['amazonMusic',  'Amazon Music'],
+  ['tidal',        'Tidal'],
+  ['deezer',       'Deezer'],
+  ['soundcloud',   'SoundCloud'],
+  ['pandora',      'Pandora'],
+  ['napster',      'Napster'],
+  ['audiomack',    'Audiomack'],
+  ['boomplay',     'Boomplay'],
+  ['audius',       'Audius']
+];
+
+const COPY_ICON = '<svg class="copy-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const CHECK_ICON = '<svg class="copy-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+function setStatus(html, isError) {
+  statusEl.innerHTML = html || '';
+  statusEl.className = 'status' + (isError ? ' error' : '');
+}
+
+async function lookup() {
+  const isrc = input.value.trim().toUpperCase().replace(/[-\s]/g, '');
+  if (!isrc) return;
+  card.classList.remove('show');
+  goBtn.disabled = true;
+  setStatus('<span class="spinner"></span>Searching platforms');
+
+  try {
+    const res = await fetch('/api/lookup?isrc=' + encodeURIComponent(isrc));
+    const data = await res.json();
+    if (!res.ok) { setStatus(data.error || 'Something went wrong', true); input.select(); return; }
+    render(data);
+    setStatus('');
+  } catch (e) {
+    setStatus('Could not reach the server. Try again.', true);
+  } finally {
+    goBtn.disabled = false;
+    input.select();
+  }
+}
+
+function render({ core, links }) {
+  $('t-title').textContent = core.title || 'Unknown title';
+  $('t-artist').textContent = (core.artists || []).filter(Boolean).join(', ');
+  $('t-isrc').textContent = core.isrc;
+  const art = $('art');
+  if (core.artwork) { art.src = core.artwork; art.style.display = ''; }
+  else { art.style.display = 'none'; }
+
+  const rows = PLATFORMS.map(([key, label]) => {
+    const url = links[key];
+    if (url) {
+      return '<div class="row available" data-url="' + encodeURIComponent(url) + '">' +
+        '<span class="plat">' + label + '</span>' +
+        '<span class="url">' + url + '</span>' +
+        '<span class="copy-tag">' + COPY_ICON + '<span class="tag-text">Copy</span></span>' +
+        '</div>';
+    }
+    return '<div class="row unavailable">' +
+      '<span class="plat">' + label + '</span>' +
+      '<span class="na">Not available on this platform</span>' +
+      '</div>';
+  }).join('');
+
+  $('rows').innerHTML = rows;
+  card.classList.add('show');
+}
+
+function copyRow(row) {
+  const url = decodeURIComponent(row.dataset.url);
+  navigator.clipboard.writeText(url).then(() => {
+    row.classList.add('copied');
+    const tag = row.querySelector('.copy-tag');
+    tag.innerHTML = CHECK_ICON + '<span class="tag-text">Copied</span>';
+    setTimeout(() => {
+      row.classList.remove('copied');
+      tag.innerHTML = COPY_ICON + '<span class="tag-text">Copy</span>';
+    }, 1400);
+  });
+}
+
+goBtn.addEventListener('click', lookup);
+input.addEventListener('keydown', e => { if (e.key === 'Enter') lookup(); });
+
+$('rows').addEventListener('click', e => {
+  const row = e.target.closest('.row.available');
+  if (row) copyRow(row);
+});
+</script>
+</body>
+</html>
