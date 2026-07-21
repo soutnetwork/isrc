@@ -40,9 +40,14 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
-async function spotifyGet(url) {
+async function spotifyGet(url, attempt = 0) {
   const token = await getSpotifyToken();
   const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+  if (res.status === 429 && attempt < 4) {
+    const retryAfter = parseInt(res.headers.get('retry-after') || '1', 10);
+    await new Promise(r => setTimeout(r, (retryAfter + 1) * 1000));
+    return spotifyGet(url, attempt + 1);
+  }
   if (!res.ok) return null;
   return res.json();
 }
@@ -321,27 +326,32 @@ app.post('/api/bulk', async (req, res) => {
 // UPC -> album + its tracks (each with ISRC + Spotify/Apple/Deezer)
 app.post('/api/upc', async (req, res) => {
   let upcs = Array.isArray(req.body.upcs) ? req.body.upcs : [];
-  upcs = [...new Set(upcs.map(cleanUpc).filter(x => x))].slice(0, 50);
+  // Keep every input UPC in its exact order (no dedup) so the output maps 1:1
+  // to the input — this lets you paste ISRCs back into the right rows.
+  upcs = upcs.map(cleanUpc).filter(x => x).slice(0, 150);
   if (!upcs.length) return res.status(400).json({ error: 'No valid UPCs provided.' });
   try {
-    const albums = await mapLimit(upcs, 3, async (upc) => {
-      const found = await spotifyAlbumByUpc(upc);
-      if (!found) return { upc, found: false };
-      // enrich each track with Apple + Deezer (direct, in parallel, limited)
-      const tracks = await mapLimit(found.tracks, 6, async (t) => {
-        if (!t) return null;
-        let appleUrl = null, deezerUrl = null;
-        if (t.isrc) {
-          const [it, dz] = await Promise.allSettled([lookupItunes(t.isrc), lookupDeezerTrack(t.isrc)]);
-          appleUrl = it.status === 'fulfilled' && it.value ? it.value.trackViewUrl : null;
-          deezerUrl = dz.status === 'fulfilled' && dz.value ? dz.value.link : null;
-        }
-        return {
-          isrc: t.isrc, title: t.title, artists: t.artists,
-          links: { spotify: t.url, appleMusic: appleUrl, deezer: deezerUrl }
-        };
-      });
-      return { upc, found: true, album: found.album, tracks: tracks.filter(Boolean) };
+    const albums = await mapLimit(upcs, 4, async (upc) => {
+      try {
+        const found = await spotifyAlbumByUpc(upc);
+        if (!found) return { upc, found: false };
+        const tracks = await mapLimit(found.tracks, 6, async (t) => {
+          if (!t) return null;
+          let appleUrl = null, deezerUrl = null;
+          if (t.isrc) {
+            const [it, dz] = await Promise.allSettled([lookupItunes(t.isrc), lookupDeezerTrack(t.isrc)]);
+            appleUrl = it.status === 'fulfilled' && it.value ? it.value.trackViewUrl : null;
+            deezerUrl = dz.status === 'fulfilled' && dz.value ? dz.value.link : null;
+          }
+          return {
+            isrc: t.isrc, title: t.title, artists: t.artists,
+            links: { spotify: t.url, appleMusic: appleUrl, deezer: deezerUrl }
+          };
+        });
+        return { upc, found: true, album: found.album, tracks: tracks.filter(Boolean) };
+      } catch (e) {
+        return { upc, found: false, error: e.message };
+      }
     });
     res.json({ count: albums.length, albums });
   } catch (err) { res.status(500).json({ error: 'UPC lookup failed', detail: err.message }); }

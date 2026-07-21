@@ -527,7 +527,7 @@ function downloadBulkCsv() {
 
 /* ---- UPC ---- */
 async function upc() {
-  const codes = [...new Set($('upc-input').value.split(/[\s,;]+/).map(s=>s.trim()).filter(Boolean))];
+  const codes = $('upc-input').value.split(/[\s,;]+/).map(s=>s.trim()).filter(Boolean);
   if (!codes.length) return;
   $('go-upc').disabled = true;
   $('status-upc').innerHTML = '<span class="spinner"></span>Fetching '+codes.length+' album(s)';
@@ -573,11 +573,20 @@ function renderUpc(albums) {
 function csvCell(v){ v = (v==null?'':String(v)); return '"' + v.replace(/"/g,'""') + '"'; }
 function downloadUpcCsv() {
   const albums = window._upcData || [];
-  const rows = [['UPC','Album','Artist','Track #','Track','ISRC','Spotify','Apple Music','Deezer']];
+  const rows = [['Status','UPC','Album','Artist','Track #','Track','ISRC','Spotify','Apple Music','Deezer']];
   albums.forEach(a => {
-    if (!a.found) { rows.push([a.upc,'NOT FOUND','','','','','','','']); return; }
+    if (!a.found) {
+      // UPC not found on Spotify — still write one row so the order is preserved
+      rows.push(['UPC NOT FOUND', a.upc, '', '', '', '', '', '', '', '']);
+      return;
+    }
+    if (!a.tracks.length) {
+      rows.push(['NO TRACKS', a.album.upc, a.album.title, (a.album.artists||[]).join(', '), '', '', '', '', '', '']);
+      return;
+    }
     a.tracks.forEach((t,i) => {
-      rows.push([a.album.upc, a.album.title, (a.album.artists||[]).join(', '), i+1, t.title, fmtIsrc(t.isrc)||'', t.links.spotify||'', t.links.appleMusic||'', t.links.deezer||'']);
+      const status = t.isrc ? 'OK' : 'NO ISRC';
+      rows.push([status, a.album.upc, a.album.title, (a.album.artists||[]).join(', '), i+1, t.title, fmtIsrc(t.isrc)||'', t.links.spotify||'', t.links.appleMusic||'', t.links.deezer||'']);
     });
   });
   const csv = rows.map(r => r.map(csvCell).join(',')).join('\r\n');
