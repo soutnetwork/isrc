@@ -45,25 +45,32 @@
   .page { position: relative; z-index: 1; padding: 0 20px 120px; }
   .wrap { max-width: 760px; margin: 0 auto; }
 
-  /* ---- Brand header (own space) ---- */
-  .brand {
-    display: flex; flex-direction: column; align-items: center;
-    padding: 54px 0 30px; gap: 16px;
+  /* ---- Top bar (logo left, like molla) ---- */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 22px 0 0;
   }
-  .brand .mark {
-    width: 62px; height: 62px; border-radius: 16px;
+  .topbar .brand { display: flex; align-items: center; gap: 11px; }
+  .topbar .mark {
+    width: 38px; height: 38px; border-radius: 10px;
     background: var(--card); border: 1px solid var(--line);
     display: flex; align-items: center; justify-content: center;
   }
-  .brand .mark img { width: 34px; height: 34px; display: block; }
-  .brand .wordmark {
+  .topbar .mark img { width: 21px; height: 21px; display: block; }
+  .topbar .wordmark {
     font-family: 'Space Grotesk', sans-serif; font-weight: 600;
-    font-size: 15px; letter-spacing: 0.28em; color: var(--text-2);
-    text-transform: uppercase; padding-left: 0.28em;
+    font-size: 15px; letter-spacing: 0.02em; color: var(--text);
   }
+  .topbar .pill-tag {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+    padding: 7px 14px; font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+    color: var(--text-2); letter-spacing: 0.08em;
+  }
+  .topbar .pill-tag .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
 
   /* ---- Hero ---- */
-  .hero { text-align: center; margin-bottom: 34px; }
+  .hero { text-align: center; margin: 52px 0 34px; }
   .hero h1 {
     font-family: 'Space Grotesk', sans-serif; font-weight: 600;
     font-size: 34px; line-height: 1.1; letter-spacing: -0.02em; margin-bottom: 12px;
@@ -228,9 +235,12 @@
 <body>
 <div class="page">
 <div class="wrap">
-  <div class="brand">
-    <div class="mark"><img src="/icon-white.png" alt="Sout Network"></div>
-    <div class="wordmark">Sout Network</div>
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark"><img src="/icon-white.png" alt="Sout Network"></div>
+      <div class="wordmark">Sout Network</div>
+    </div>
+    <span class="pill-tag"><span class="dot"></span>ISRC LOOKUP</span>
   </div>
 
   <div class="hero">
@@ -301,6 +311,7 @@ const $ = id => document.getElementById(id);
 const COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
 const OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+const DOWNLOAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
 
 const PLATFORMS = [
   ['spotify','Spotify'], ['appleMusic','Apple Music'], ['youtubeMusic','YouTube Music'],
@@ -433,8 +444,10 @@ async function bulk() {
   finally { $('go-bulk').disabled = false; }
 }
 function renderBulk(results) {
+  window._bulkData = results;
   const found = results.filter(r => r.found).length;
-  let html = '<div class="rbar"><span>'+found+' of '+results.length+' tracks found</span></div>';
+  let html = '<div class="rbar"><span>'+found+' of '+results.length+' tracks found</span>'+
+    '<button class="ibtn" id="bulk-csv">'+DOWNLOAD+'<span>Download CSV</span></button></div>';
   html += '<div class="tbl"><div class="trow head"><span>#</span><span>Track</span><span>Links</span></div>';
   results.forEach((r, i) => {
     if (!r.found) {
@@ -453,6 +466,20 @@ function renderBulk(results) {
 }
 $('go-bulk').addEventListener('click', bulk);
 bindPillCopy($('results-bulk'));
+$('results-bulk').addEventListener('click', e => { if (e.target.closest('#bulk-csv')) downloadBulkCsv(); });
+function downloadBulkCsv() {
+  const results = window._bulkData || [];
+  const rows = [['ISRC','Track','Artist','Spotify','Apple Music','Deezer']];
+  results.forEach(r => {
+    if (!r.found) { rows.push([r.isrc,'NOT FOUND','','','','']); return; }
+    rows.push([r.isrc, r.title||'', (r.artists||[]).join(', '), r.links.spotify||'', r.links.appleMusic||'', r.links.deezer||'']);
+  });
+  const csv = rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+  const blob = new Blob(['\ufeff'+csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'isrc-tracks.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
 
 /* ---- UPC ---- */
 async function upc() {
@@ -472,7 +499,10 @@ async function upc() {
   finally { $('go-upc').disabled = false; }
 }
 function renderUpc(albums) {
-  let html = '';
+  window._upcData = albums;
+  const totalTracks = albums.reduce((n,a)=> n + (a.found ? a.tracks.length : 0), 0);
+  let html = '<div class="rbar"><span>'+albums.filter(a=>a.found).length+' album(s) · '+totalTracks+' tracks</span>'+
+    '<span style="display:flex;gap:8px"><button class="ibtn" id="upc-csv">'+DOWNLOAD+'<span>Download CSV</span></button></span></div>';
   albums.forEach(a => {
     if (!a.found) { html += '<div class="album-block"><div class="album-head"><div><div class="t">Album not found</div><div class="upc">UPC '+a.upc+'</div></div></div></div>'; return; }
     const al = a.album;
@@ -485,7 +515,7 @@ function renderUpc(albums) {
       const pills = BULK_PLATFORMS.map(([k,l]) => pill(k,l,t.links[k])).join('');
       const isrcRow = t.isrc
         ? '<div class="isrc"><span>'+t.isrc+'</span><span class="mini" data-isrc="'+t.isrc+'">'+COPY+'</span><button class="expand-btn" data-isrc="'+t.isrc+'">+ all platforms</button></div>'
-        : '<div class="isrc">—</div>';
+        : '<div class="isrc">— no ISRC</div>';
       html += '<div class="trow"><span class="num">'+(i+1)+'</span>'+
         '<div class="tname"><div class="t">'+(t.title||'')+'</div>'+isrcRow+'</div>'+
         '<div class="pills">'+pills+'</div>'+
@@ -495,8 +525,27 @@ function renderUpc(albums) {
   });
   const box = $('results-upc'); box.innerHTML = html; box.classList.add('show');
 }
+
+function csvCell(v){ v = (v==null?'':String(v)); return '"' + v.replace(/"/g,'""') + '"'; }
+function downloadUpcCsv() {
+  const albums = window._upcData || [];
+  const rows = [['UPC','Album','Artist','Track #','Track','ISRC','Spotify','Apple Music','Deezer']];
+  albums.forEach(a => {
+    if (!a.found) { rows.push([a.upc,'NOT FOUND','','','','','','','']); return; }
+    a.tracks.forEach((t,i) => {
+      rows.push([a.album.upc, a.album.title, (a.album.artists||[]).join(', '), i+1, t.title, t.isrc||'', t.links.spotify||'', t.links.appleMusic||'', t.links.deezer||'']);
+    });
+  });
+  const csv = rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+  const blob = new Blob(['\ufeff'+csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'upc-tracks.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
 $('go-upc').addEventListener('click', upc);
 bindPillCopy($('results-upc'));
+$('results-upc').addEventListener('click', e => { if (e.target.closest('#upc-csv')) downloadUpcCsv(); });
 </script>
 </body>
 </html>

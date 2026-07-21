@@ -75,17 +75,42 @@ async function spotifyAlbumByUpc(upc) {
   const data = await spotifyGet(`https://api.spotify.com/v1/search?q=${encodeURIComponent('upc:' + upc)}&type=album&limit=1`);
   const albumLite = data && data.albums && data.albums.items && data.albums.items[0];
   if (!albumLite) return null;
-  const album = await spotifyGet(`https://api.spotify.com/v1/albums/${albumLite.id}`);
+  const album = await spotifyGet(`https://api.spotify.com/v1/albums/${albumLite.id}?market=US`);
   if (!album) return null;
 
-  // Collect track ids (album endpoint returns first page; handle up to 50)
-  const trackIds = (album.tracks && album.tracks.items ? album.tracks.items : []).map(t => t.id).filter(Boolean);
-  let fullTracks = [];
-  for (let i = 0; i < trackIds.length; i += 50) {
-    const batch = trackIds.slice(i, i + 50);
-    const tr = await spotifyGet(`https://api.spotify.com/v1/tracks?ids=${batch.join(',')}`);
-    if (tr && tr.tracks) fullTracks = fullTracks.concat(tr.tracks.filter(Boolean));
+  // 1) Base track list from the album (simplified items) — always available.
+  //    Page through album tracks in case the album has > 50 tracks.
+  let simple = (album.tracks && album.tracks.items) ? album.tracks.items.slice() : [];
+  let next = album.tracks && album.tracks.next;
+  while (next) {
+    const page = await spotifyGet(next);
+    if (page && page.items) { simple = simple.concat(page.items); next = page.next; }
+    else break;
   }
+
+  // 2) Enrich each track with ISRC (and full data) via /tracks?ids=. Tolerate failures.
+  const idToFull = {};
+  const ids = simple.map(t => t.id).filter(Boolean);
+  for (let i = 0; i < ids.length; i += 50) {
+    const batch = ids.slice(i, i + 50);
+    const tr = await spotifyGet(`https://api.spotify.com/v1/tracks?ids=${batch.join(',')}`);
+    if (tr && tr.tracks) tr.tracks.filter(Boolean).forEach(f => { idToFull[f.id] = f; });
+  }
+
+  // 3) Build final track list — falls back to simplified data if enrich missed
+  const tracks = simple.map(s => {
+    const full = idToFull[s.id];
+    return {
+      id: s.id,
+      isrc: full && full.external_ids && full.external_ids.isrc ? full.external_ids.isrc : null,
+      title: s.name,
+      artists: s.artists ? s.artists.map(a => a.name) : [],
+      url: (s.external_urls && s.external_urls.spotify) || (full && full.external_urls && full.external_urls.spotify) || null,
+      durationMs: full ? full.duration_ms : s.duration_ms,
+      trackNumber: s.track_number
+    };
+  });
+
   return {
     album: {
       title: album.name,
@@ -97,7 +122,7 @@ async function spotifyAlbumByUpc(upc) {
       url: album.external_urls && album.external_urls.spotify,
       totalTracks: album.total_tracks
     },
-    tracks: fullTracks.map(shapeSpotifyTrack)
+    tracks
   };
 }
 
