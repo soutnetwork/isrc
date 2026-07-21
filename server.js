@@ -14,7 +14,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Simple in-memory cache so repeated lookups are instant
 // and we stay well within Odesli's rate limits
 const cache = new Map();
-const CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours
+const CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours for complete results
+const CACHE_TTL_PARTIAL = 1000 * 60 * 20; // 20 min for incomplete (brand-new track, still indexing)
 
 // ---- Deezer: track by ISRC (no auth needed) ----
 async function lookupDeezerTrack(isrc) {
@@ -36,21 +37,40 @@ async function lookupDeezerAlbum(albumId) {
 
 // ---- iTunes / Apple Music: lookup by ISRC (no auth needed) ----
 async function lookupItunes(isrc) {
-  const res = await fetch(`https://itunes.apple.com/lookup?isrc=${encodeURIComponent(isrc)}&entity=song`);
-  if (!res.ok) return null;
-  const data = await res.json();
-  const song = data.results && data.results.find(r => r.wrapperType === 'track');
-  return song || null;
+  // Try several storefronts — a brand-new track may be indexed in one before another
+  const countries = ['US', 'EG', 'SA', 'GB'];
+  for (const country of countries) {
+    try {
+      const res = await fetch(`https://itunes.apple.com/lookup?isrc=${encodeURIComponent(isrc)}&country=${country}&entity=song`);
+      if (!res.ok) continue;
+      const data = await res.json();
+      const song = data.results && data.results.find(r => r.wrapperType === 'track');
+      if (song) return song;
+    } catch (e) { /* try next storefront */ }
+  }
+  return null;
 }
 
-// ---- Odesli / song.link: all platform links from one URL ----
+// ---- Odesli / song.link: all platform links from a seed URL ----
+// Retries on rate-limit (429) since Odesli allows only ~10 requests/minute
 async function lookupOdesli(sourceUrl) {
-  const res = await fetch(
-    `https://api.song.link/v1-alpha.1/links?url=${encodeURIComponent(sourceUrl)}&userCountry=EG`
-  );
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data.linksByPlatform || null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(
+        `https://api.song.link/v1-alpha.1/links?url=${encodeURIComponent(sourceUrl)}&userCountry=EG`
+      );
+      if (res.status === 429) {
+        await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+        continue;
+      }
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.linksByPlatform || null;
+    } catch (e) {
+      await new Promise(r => setTimeout(r, 800));
+    }
+  }
+  return null;
 }
 
 // ---- Main API endpoint ----
@@ -61,9 +81,9 @@ app.get('/api/lookup', async (req, res) => {
     return res.status(400).json({ error: 'Invalid ISRC format. Expected 12 characters, e.g. EGA032500123' });
   }
 
-  // Serve from cache if fresh
+  // Serve from cache if fresh (partial results expire sooner)
   const cached = cache.get(isrc);
-  if (cached && Date.now() - cached.time < CACHE_TTL) {
+  if (cached && Date.now() - cached.time < cached.ttl) {
     return res.json(cached.payload);
   }
 
@@ -88,12 +108,24 @@ app.get('/api/lookup', async (req, res) => {
       try { album = await lookupDeezerAlbum(deezer.album.id); } catch (e) { /* non-critical */ }
     }
 
-    // All platform links from Odesli, seeded by the best URL we have
+    // All platform links from Odesli.
+    // Apple/Spotify are the most-crawled anchors, so seed from Apple first;
+    // if Spotify is still missing, try again seeded from Deezer and merge.
     let platformLinks = null;
-    const seedUrl = (deezer && deezer.link) || (itunes && itunes.trackViewUrl);
-    if (seedUrl) {
-      try { platformLinks = await lookupOdesli(seedUrl); } catch (e) { /* non-critical */ }
+    const appleSeed = itunes && itunes.trackViewUrl;
+    const deezerSeed = deezer && deezer.link;
+
+    if (appleSeed) {
+      try { platformLinks = await lookupOdesli(appleSeed); } catch (e) { /* non-critical */ }
     }
+    const gotSpotify = platformLinks && platformLinks.spotify;
+    if ((!platformLinks || !gotSpotify) && deezerSeed) {
+      try {
+        const alt = await lookupOdesli(deezerSeed);
+        if (alt) platformLinks = Object.assign({}, alt, platformLinks || {});
+      } catch (e) { /* non-critical */ }
+    }
+    const seedUrl = appleSeed || deezerSeed;
 
     const pick = key => platformLinks && platformLinks[key] ? platformLinks[key].url : null;
 
@@ -118,18 +150,27 @@ app.get('/api/lookup', async (req, res) => {
 
     const links = {
       spotify: pick('spotify'),
-      appleMusic: pick('appleMusic') || (itunes && itunes.trackViewUrl) || null,
-      deezer: pick('deezer') || (deezer && deezer.link) || null,
+      appleMusic: pick('appleMusic') || pick('itunes') || (itunes && itunes.trackViewUrl) || null,
       youtubeMusic: pick('youtubeMusic'),
       youtube: pick('youtube'),
-      amazonMusic: pick('amazonMusic'),
-      tidal: pick('tidal'),
       anghami: pick('anghami'),
+      amazonMusic: pick('amazonMusic') || pick('amazonStore'),
+      tidal: pick('tidal'),
+      deezer: pick('deezer') || (deezer && deezer.link) || null,
+      soundcloud: pick('soundcloud'),
+      pandora: pick('pandora'),
+      napster: pick('napster'),
+      audiomack: pick('audiomack'),
+      audius: pick('audius'),
+      boomplay: pick('boomplay'),
       songlink: seedUrl ? `https://song.link/${encodeURIComponent(seedUrl)}` : null
     };
 
     const payload = { core, links };
-    cache.set(isrc, { time: Date.now(), payload });
+    // If the big platforms resolved, cache long; if not, it's likely still
+    // indexing, so cache briefly and re-check on the next lookup.
+    const complete = links.spotify && links.appleMusic;
+    cache.set(isrc, { time: Date.now(), ttl: complete ? CACHE_TTL : CACHE_TTL_PARTIAL, payload });
     res.json(payload);
   } catch (err) {
     res.status(500).json({ error: 'Lookup failed', detail: err.message });
