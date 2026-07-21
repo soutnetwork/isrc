@@ -4,308 +4,462 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ISRC Lookup — Sout Network</title>
+<link rel="icon" href="/icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0E1013;
-    --panel: #171A1F;
-    --panel-2: #1E222A;
-    --line: #2A2F38;
-    --line-soft: #23272F;
-    --text: #ECEAE5;
-    --muted: #8A9099;
-    --accent: #2ED573;
-    --accent-dim: #1C6B3E;
-    --link: #6BA9FF;
-    --danger: #C86A60;
-    --row-hover: #212632;
+    --bg: #FFFFFF;
+    --ink: #111111;
+    --ink-soft: #3A3A3A;
+    --muted: #8A8A8A;
+    --line: #E6E6E6;
+    --line-strong: #D2D2D2;
+    --panel: #FAFAFA;
+    --panel-2: #F3F3F3;
+    --ok: #157347;
+    --ok-bg: #E7F3EC;
+    --danger: #B23B3B;
+    --hover: #F5F5F5;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     background: var(--bg);
-    color: var(--text);
+    color: var(--ink);
     font-family: 'Inter', sans-serif;
     min-height: 100vh;
-    padding: 32px 18px 90px;
+    padding: 40px 20px 100px;
+    -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 640px; margin: 0 auto; }
+  .wrap { max-width: 780px; margin: 0 auto; }
 
-  .brand {
-    display: flex; align-items: baseline; gap: 10px;
+  header {
+    display: flex; align-items: center; justify-content: space-between;
     border-bottom: 1px solid var(--line);
-    padding-bottom: 14px; margin-bottom: 22px;
+    padding-bottom: 18px; margin-bottom: 30px;
   }
-  .brand .name { font-weight: 700; letter-spacing: 0.02em; font-size: 14px; }
-  .brand .tool {
-    font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--muted);
+  header img.logo { height: 30px; display: block; }
+  header .tag {
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    color: var(--muted); letter-spacing: 0.02em;
   }
 
-  h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
-  .sub { color: var(--muted); font-size: 13px; margin-bottom: 22px; line-height: 1.6; }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 6px; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-soft); font-size: 14px; margin-bottom: 24px; line-height: 1.6; }
 
-  /* ---- Search ---- */
+  .tabs {
+    display: inline-flex; gap: 2px; background: var(--panel-2);
+    padding: 3px; border-radius: 10px; margin-bottom: 22px;
+  }
+  .tab {
+    border: none; background: transparent; cursor: pointer;
+    font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 500;
+    color: var(--ink-soft); padding: 8px 18px; border-radius: 8px; transition: all .12s;
+  }
+  .tab.active { background: var(--bg); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+
   .search { display: flex; gap: 8px; }
-  .search input {
-    flex: 1;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 9px;
-    padding: 15px 16px;
-    color: var(--text);
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 17px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    outline: none;
-    transition: border-color .12s;
+  .search input, textarea {
+    flex: 1; width: 100%;
+    background: var(--bg); border: 1px solid var(--line-strong); border-radius: 10px;
+    padding: 14px 15px; color: var(--ink);
+    font-family: 'IBM Plex Mono', monospace; font-size: 16px; outline: none; transition: border-color .12s;
   }
-  .search input:focus { border-color: var(--accent-dim); }
-  .search input::placeholder { color: #565B64; }
-  .search button {
-    background: var(--text);
-    color: var(--bg);
-    border: none;
-    border-radius: 9px;
-    padding: 0 26px;
-    font-family: 'Inter', sans-serif;
-    font-weight: 600;
-    font-size: 15px;
-    cursor: pointer;
-    transition: opacity .12s;
+  .search input { text-transform: uppercase; letter-spacing: 0.08em; }
+  textarea {
+    resize: vertical; min-height: 120px; line-height: 1.7;
+    text-transform: uppercase; letter-spacing: 0.04em; font-size: 14px;
   }
-  .search button:hover { opacity: .85; }
-  .search button:disabled { opacity: .4; cursor: default; }
+  input:focus, textarea:focus { border-color: var(--ink); }
+  input::placeholder, textarea::placeholder { color: #B0B0B0; text-transform: none; letter-spacing: normal; }
+  .btn-primary {
+    background: var(--ink); color: #fff; border: none; border-radius: 10px;
+    padding: 0 28px; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 15px;
+    cursor: pointer; transition: opacity .12s; white-space: nowrap;
+  }
+  .btn-primary:hover { opacity: .88; }
+  .btn-primary:disabled { opacity: .4; cursor: default; }
+  .bulk-actions { margin-top: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .hint-inline { font-size: 12.5px; color: var(--muted); }
 
-  .status {
-    margin-top: 12px; font-size: 13px; color: var(--muted);
-    min-height: 18px;
-  }
+  .status { margin-top: 14px; font-size: 13.5px; color: var(--ink-soft); min-height: 18px; }
   .status.error { color: var(--danger); }
   .spinner {
     display: inline-block; width: 13px; height: 13px;
-    border: 2px solid var(--line); border-top-color: var(--accent);
-    border-radius: 50%; animation: spin .7s linear infinite;
-    vertical-align: -2px; margin-right: 7px;
+    border: 2px solid var(--line-strong); border-top-color: var(--ink);
+    border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; margin-right: 7px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ---- Result ---- */
   .card {
-    margin-top: 22px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    overflow: hidden;
-    display: none;
+    margin-top: 26px; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: none;
   }
   .card.show { display: block; }
-
   .track-head {
-    display: flex; gap: 14px; align-items: center;
-    padding: 16px;
-    border-bottom: 1px solid var(--line-soft);
-    background: var(--panel-2);
+    display: flex; gap: 16px; align-items: center;
+    padding: 18px; border-bottom: 1px solid var(--line); background: var(--panel);
   }
-  .art {
-    width: 60px; height: 60px; border-radius: 8px; flex-shrink: 0;
-    object-fit: cover; background: var(--line);
-  }
+  .art { width: 66px; height: 66px; border-radius: 9px; flex-shrink: 0; object-fit: cover; background: var(--panel-2); border: 1px solid var(--line); }
   .track-meta { min-width: 0; flex: 1; }
-  .track-meta .title {
-    font-size: 16px; font-weight: 600; line-height: 1.3;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  .track-meta .title { font-size: 17px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-meta .artist { font-size: 14px; color: var(--ink-soft); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-meta .facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 4px 9px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--ink-soft); cursor: default;
   }
-  .track-meta .artist {
-    font-size: 13px; color: var(--muted); margin-top: 2px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .track-meta .isrc {
-    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
-    color: #6E7580; margin-top: 5px; letter-spacing: 0.08em;
-  }
+  .chip b { color: var(--muted); font-weight: 500; }
+  .chip[data-copy] { cursor: pointer; }
+  .chip .mini-copy { color: var(--muted); display: inline-flex; }
+  .chip[data-copy]:hover .mini-copy { color: var(--ink); }
+  .chip.copied { background: var(--ok-bg); border-color: #BFE0CC; color: var(--ok); }
+  .chip.copied b { color: var(--ok); }
 
-  /* ---- Platform rows ---- */
-  .rows { padding: 6px; }
-  .row {
-    display: flex; align-items: center; gap: 12px;
-    padding: 11px 12px;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background .1s;
-    user-select: none;
-  }
-  .row.available:hover { background: var(--row-hover); }
-  .row.available:active { background: #262C38; }
-  .row .plat {
-    font-weight: 600; font-size: 14px;
-    width: 130px; flex-shrink: 0;
-  }
+  .rows { padding: 8px; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 9px; }
+  .row + .row { border-top: 1px solid var(--line); }
+  .row .plat { font-weight: 600; font-size: 14px; width: 128px; flex-shrink: 0; }
   .row .url {
     flex: 1; min-width: 0;
-    font-family: 'IBM Plex Mono', monospace; font-size: 11.5px;
-    color: var(--link);
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--ink-soft);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .row .copy-tag {
-    flex-shrink: 0;
-    font-size: 12px; font-weight: 600;
-    color: var(--muted);
-    display: flex; align-items: center; gap: 5px;
-    min-width: 74px; justify-content: flex-end;
-  }
-  .row.copied .copy-tag { color: var(--accent); }
-  .row.copied { background: rgba(46,213,115,0.08); }
-  .copy-ico { width: 14px; height: 14px; }
-
-  .row.unavailable { cursor: default; opacity: 0.55; }
   .row.unavailable .plat { color: var(--muted); font-weight: 500; }
-  .row.unavailable .na {
-    flex: 1; font-size: 12.5px; color: #6E7580;
+  .row.unavailable .na { flex: 1; font-size: 12.5px; color: #B0B0B0; }
+  .rowbtns { display: flex; gap: 6px; flex-shrink: 0; }
+  .ico-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    border: 1px solid var(--line-strong); background: var(--bg); border-radius: 7px; padding: 6px 11px;
+    cursor: pointer; font-family: 'Inter', sans-serif; font-size: 12.5px; font-weight: 500; color: var(--ink-soft);
+    transition: all .1s; text-decoration: none;
   }
+  .ico-btn:hover { background: var(--hover); color: var(--ink); }
+  .ico-btn.copied { background: var(--ok-bg); border-color: #BFE0CC; color: var(--ok); }
+  .ico-btn svg { width: 13px; height: 13px; }
+  .toolbar { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px 0; }
 
-  .hint {
-    text-align: center; font-size: 12px; color: #626873;
-    padding: 12px 0 4px;
+  .results { margin-top: 24px; display: none; }
+  .results.show { display: block; }
+  .result-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 13.5px; color: var(--ink-soft); }
+  .tbl { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .trow { display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: center; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+  .trow:last-child { border-bottom: none; }
+  .trow.head { background: var(--panel); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+  .trow .num { color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+  .trow .tname { min-width: 0; }
+  .trow .tname .t { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trow .tname .a { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trow .tname .isrc { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .plat-pills { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    border: 1px solid var(--line-strong); border-radius: 6px; padding: 4px 8px;
+    font-size: 11.5px; font-weight: 600; color: var(--ink-soft); background: var(--bg);
+    transition: all .1s;
   }
-  kbd {
-    background: var(--panel-2); border: 1px solid var(--line);
-    border-radius: 4px; padding: 1px 6px; font-family: 'IBM Plex Mono', monospace;
-    font-size: 11px; color: var(--muted);
-  }
+  .pill .copy-p { cursor: pointer; }
+  .pill:hover { background: var(--hover); }
+  .pill .copy-p:hover { color: var(--ink); }
+  .pill.copied { background: var(--ok-bg); border-color: #BFE0CC; color: var(--ok); }
+  .pill.na { opacity: .4; }
+  .pill .open { color: var(--muted); display: inline-flex; text-decoration: none; }
+  .pill .open:hover { color: var(--ink); }
+  .pill .open svg { width: 12px; height: 12px; }
+  .expand { grid-column: 1 / -1; border-top: 1px dashed var(--line); margin-top: 8px; padding-top: 10px; display: none; }
+  .expand.show { display: block; }
+  .expand-btn { font-size: 11.5px; color: var(--muted); cursor: pointer; background: none; border: none; padding: 2px 0; }
+  .expand-btn:hover { color: var(--ink); }
 
-  @media (max-width: 520px) {
-    .row .plat { width: 96px; }
+  .album-head { display: flex; gap: 14px; align-items: center; padding: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; }
+  .album-head img { width: 54px; height: 54px; border-radius: 8px; object-fit: cover; border: 1px solid var(--line); }
+  .album-head .t { font-weight: 600; font-size: 15px; }
+  .album-head .a { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .album-head .upc { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--ink-soft); margin-top: 6px; }
+  .album-block { margin-bottom: 22px; }
+
+  footer { text-align: center; margin-top: 40px; font-size: 12px; color: #C0C0C0; }
+
+  @media (max-width: 620px) {
+    .row .plat { width: 88px; }
     .row .url { display: none; }
+    .trow { grid-template-columns: 28px 1fr; }
+    .trow .plat-pills { grid-column: 1 / -1; justify-content: flex-start; margin-top: 6px; }
   }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="brand">
-    <span class="name">Sout Network</span>
-    <span class="tool">/ isrc-lookup</span>
+  <header>
+    <img src="/logo.png" class="logo" alt="Sout Network">
+    <span class="tag">ISRC LOOKUP</span>
+  </header>
+
+  <h1>Find tracks by ISRC or UPC</h1>
+  <p class="sub">Get streaming links across every platform — copy each one and paste it into Believe. Works one at a time, in bulk, or by album UPC.</p>
+
+  <div class="tabs">
+    <button class="tab active" data-mode="single">Single ISRC</button>
+    <button class="tab" data-mode="bulk">Bulk ISRC</button>
+    <button class="tab" data-mode="upc">By UPC</button>
   </div>
 
-  <h1>Find a track by ISRC</h1>
-  <p class="sub">Type a code and press Enter. You'll see which platforms the track is on — click any platform to copy its link and paste it straight into Believe.</p>
-
-  <div class="search">
-    <input id="isrc" placeholder="USUM72409273" maxlength="15" spellcheck="false" autocomplete="off" autofocus>
-    <button id="go">Look up</button>
-  </div>
-  <div class="status" id="status"></div>
-
-  <div class="card" id="card">
-    <div class="track-head">
-      <img class="art" id="art" alt="">
-      <div class="track-meta">
-        <div class="title" id="t-title"></div>
-        <div class="artist" id="t-artist"></div>
-        <div class="isrc" id="t-isrc"></div>
-      </div>
+  <div class="mode" id="mode-single">
+    <div class="search">
+      <input id="isrc" placeholder="USUM72409273" maxlength="15" spellcheck="false" autocomplete="off" autofocus>
+      <button class="btn-primary" id="go-single">Look up</button>
     </div>
-    <div class="rows" id="rows"></div>
-    <div class="hint">Click any platform to copy its link · Press <kbd>Enter</kbd> to look up the next code</div>
+    <div class="status" id="status-single"></div>
+    <div class="card" id="card">
+      <div class="track-head">
+        <img class="art" id="art" alt="">
+        <div class="track-meta">
+          <div class="title" id="t-title"></div>
+          <div class="artist" id="t-artist"></div>
+          <div class="facts" id="t-facts"></div>
+        </div>
+      </div>
+      <div class="toolbar">
+        <button class="ico-btn" id="copy-all-single">Copy all links</button>
+      </div>
+      <div class="rows" id="rows"></div>
+    </div>
   </div>
+
+  <div class="mode" id="mode-bulk" style="display:none">
+    <textarea id="bulk-input" placeholder="Paste ISRC codes — one per line, or separated by spaces/commas&#10;USUM72409273&#10;GBAYE0601477&#10;EGA032500123"></textarea>
+    <div class="bulk-actions">
+      <button class="btn-primary" id="go-bulk">Look up all</button>
+      <span class="hint-inline">Fast mode: Spotify, Apple, Deezer per track. Expand a row for all platforms.</span>
+    </div>
+    <div class="status" id="status-bulk"></div>
+    <div class="results" id="results-bulk"></div>
+  </div>
+
+  <div class="mode" id="mode-upc" style="display:none">
+    <textarea id="upc-input" placeholder="Paste UPC / barcode — one per line&#10;00602547461445"></textarea>
+    <div class="bulk-actions">
+      <button class="btn-primary" id="go-upc">Get tracks</button>
+      <span class="hint-inline">Returns every track in the album with its ISRC and links.</span>
+    </div>
+    <div class="status" id="status-upc"></div>
+    <div class="results" id="results-upc"></div>
+  </div>
+
+  <footer>Sout Network · internal tool</footer>
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
-const input = $('isrc'), goBtn = $('go'), statusEl = $('status'), card = $('card');
+const COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+const OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
 
 const PLATFORMS = [
-  ['spotify',      'Spotify'],
-  ['appleMusic',   'Apple Music'],
-  ['youtubeMusic', 'YouTube Music'],
-  ['youtube',      'YouTube'],
-  ['anghami',      'Anghami'],
-  ['amazonMusic',  'Amazon Music'],
-  ['tidal',        'Tidal'],
-  ['deezer',       'Deezer'],
-  ['soundcloud',   'SoundCloud'],
-  ['pandora',      'Pandora'],
-  ['napster',      'Napster'],
-  ['audiomack',    'Audiomack'],
-  ['boomplay',     'Boomplay'],
-  ['audius',       'Audius']
+  ['spotify','Spotify'], ['appleMusic','Apple Music'], ['youtubeMusic','YouTube Music'],
+  ['youtube','YouTube'], ['anghami','Anghami'], ['amazonMusic','Amazon Music'],
+  ['tidal','Tidal'], ['deezer','Deezer'], ['soundcloud','SoundCloud'],
+  ['pandora','Pandora'], ['napster','Napster'], ['audiomack','Audiomack'],
+  ['boomplay','Boomplay'], ['audius','Audius']
 ];
+const BULK_PLATFORMS = [['spotify','Spotify'],['appleMusic','Apple'],['deezer','Deezer']];
 
-const COPY_ICON = '<svg class="copy-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-const CHECK_ICON = '<svg class="copy-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-
-function setStatus(html, isError) {
-  statusEl.innerHTML = html || '';
-  statusEl.className = 'status' + (isError ? ' error' : '');
-}
-
-async function lookup() {
-  const isrc = input.value.trim().toUpperCase().replace(/[-\s]/g, '');
-  if (!isrc) return;
-  card.classList.remove('show');
-  goBtn.disabled = true;
-  setStatus('<span class="spinner"></span>Searching platforms');
-
-  try {
-    const res = await fetch('/api/lookup?isrc=' + encodeURIComponent(isrc));
-    const data = await res.json();
-    if (!res.ok) { setStatus(data.error || 'Something went wrong', true); input.select(); return; }
-    render(data);
-    setStatus('');
-  } catch (e) {
-    setStatus('Could not reach the server. Try again.', true);
-  } finally {
-    goBtn.disabled = false;
-    input.select();
-  }
-}
-
-function render({ core, links }) {
-  $('t-title').textContent = core.title || 'Unknown title';
-  $('t-artist').textContent = (core.artists || []).filter(Boolean).join(', ');
-  $('t-isrc').textContent = core.isrc;
-  const art = $('art');
-  if (core.artwork) { art.src = core.artwork; art.style.display = ''; }
-  else { art.style.display = 'none'; }
-
-  const rows = PLATFORMS.map(([key, label]) => {
-    const url = links[key];
-    if (url) {
-      return '<div class="row available" data-url="' + encodeURIComponent(url) + '">' +
-        '<span class="plat">' + label + '</span>' +
-        '<span class="url">' + url + '</span>' +
-        '<span class="copy-tag">' + COPY_ICON + '<span class="tag-text">Copy</span></span>' +
-        '</div>';
-    }
-    return '<div class="row unavailable">' +
-      '<span class="plat">' + label + '</span>' +
-      '<span class="na">Not available on this platform</span>' +
-      '</div>';
-  }).join('');
-
-  $('rows').innerHTML = rows;
-  card.classList.add('show');
-}
-
-function copyRow(row) {
-  const url = decodeURIComponent(row.dataset.url);
-  navigator.clipboard.writeText(url).then(() => {
-    row.classList.add('copied');
-    const tag = row.querySelector('.copy-tag');
-    tag.innerHTML = CHECK_ICON + '<span class="tag-text">Copied</span>';
-    setTimeout(() => {
-      row.classList.remove('copied');
-      tag.innerHTML = COPY_ICON + '<span class="tag-text">Copy</span>';
-    }, 1400);
+function copyText(text, el, restore) {
+  navigator.clipboard.writeText(text).then(() => {
+    const prev = el.innerHTML;
+    el.classList.add('copied');
+    if (restore !== false) el.innerHTML = CHECK + '<span>Copied</span>';
+    setTimeout(() => { el.classList.remove('copied'); if (restore !== false) el.innerHTML = prev; }, 1300);
   });
 }
 
-goBtn.addEventListener('click', lookup);
-input.addEventListener('keydown', e => { if (e.key === 'Enter') lookup(); });
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    ['single','bulk','upc'].forEach(m => $('mode-' + m).style.display = 'none');
+    $('mode-' + tab.dataset.mode).style.display = 'block';
+  });
+});
 
+/* ---------- Single ---------- */
+const inp = $('isrc');
+async function single() {
+  const isrc = inp.value.trim().toUpperCase().replace(/[-\s]/g, '');
+  if (!isrc) return;
+  $('card').classList.remove('show');
+  $('go-single').disabled = true;
+  $('status-single').innerHTML = '<span class="spinner"></span>Searching platforms';
+  $('status-single').className = 'status';
+  try {
+    const res = await fetch('/api/lookup?isrc=' + encodeURIComponent(isrc));
+    const data = await res.json();
+    if (!res.ok) { $('status-single').textContent = data.error || 'Error'; $('status-single').className = 'status error'; inp.select(); return; }
+    renderSingle(data);
+    $('status-single').textContent = '';
+  } catch (e) {
+    $('status-single').textContent = 'Could not reach the server.'; $('status-single').className = 'status error';
+  } finally { $('go-single').disabled = false; inp.select(); }
+}
+function fmtDur(ms){ if(!ms) return null; const s=Math.round(ms/1000); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+
+function renderSingle({ core, links }) {
+  $('t-title').textContent = core.title || 'Unknown title';
+  $('t-artist').textContent = (core.artists||[]).filter(Boolean).join(', ');
+  const art = $('art');
+  if (core.artwork) { art.src = core.artwork; art.style.display=''; } else { art.style.display='none'; }
+
+  const facts = [['ISRC', core.isrc, true]];
+  if (core.upc) facts.push(['UPC', core.upc, true]);
+  if (core.label) facts.push(['Label', core.label, false]);
+  if (core.releaseDate) facts.push(['Released', core.releaseDate, false]);
+  if (fmtDur(core.durationMs)) facts.push(['Length', fmtDur(core.durationMs), false]);
+  $('t-facts').innerHTML = facts.map(([k,v,copyable]) =>
+    '<span class="chip" '+(copyable?'data-copy="'+v+'"':'')+'><b>'+k+'</b> '+v+(copyable?' <span class="mini-copy">'+COPY+'</span>':'')+'</span>'
+  ).join('');
+
+  $('rows').innerHTML = PLATFORMS.map(([key,label]) => {
+    const url = links[key];
+    if (!url) return '<div class="row unavailable"><span class="plat">'+label+'</span><span class="na">Not available on this platform</span></div>';
+    return '<div class="row"><span class="plat">'+label+'</span>'+
+      '<span class="url">'+url+'</span>'+
+      '<span class="rowbtns">'+
+      '<button class="ico-btn copy-link" data-url="'+encodeURIComponent(url)+'">'+COPY+'<span>Copy</span></button>'+
+      '<a class="ico-btn" href="'+url+'" target="_blank" rel="noopener">'+OPEN+'<span>Open</span></a>'+
+      '</span></div>';
+  }).join('');
+  $('card').classList.add('show');
+  window._singleLinks = links;
+}
+
+$('go-single').addEventListener('click', single);
+inp.addEventListener('keydown', e => { if (e.key === 'Enter') single(); });
 $('rows').addEventListener('click', e => {
-  const row = e.target.closest('.row.available');
-  if (row) copyRow(row);
+  const b = e.target.closest('.copy-link');
+  if (b) copyText(decodeURIComponent(b.dataset.url), b);
+});
+$('t-facts').addEventListener('click', e => {
+  const chip = e.target.closest('.chip[data-copy]');
+  if (chip) copyText(chip.dataset.copy, chip, false);
+});
+$('copy-all-single').addEventListener('click', e => {
+  const links = window._singleLinks || {};
+  const text = PLATFORMS.map(([k,l]) => links[k] ? l+': '+links[k] : null).filter(Boolean).join('\n');
+  copyText(text, e.currentTarget);
+});
+
+/* ---------- Bulk ---------- */
+function pill(key, label, url) {
+  if (!url) return '<span class="pill na">'+label+'</span>';
+  return '<span class="pill"><span class="copy-p" data-url="'+encodeURIComponent(url)+'">'+label+'</span>'+
+    '<a class="open" href="'+url+'" target="_blank" rel="noopener" title="Open">'+OPEN+'</a></span>';
+}
+
+async function bulk() {
+  const codes = [...new Set($('bulk-input').value.split(/[\s,;]+/).map(s=>s.trim().toUpperCase()).filter(Boolean))];
+  if (!codes.length) return;
+  $('go-bulk').disabled = true;
+  $('status-bulk').innerHTML = '<span class="spinner"></span>Looking up '+codes.length+' tracks';
+  $('status-bulk').className = 'status';
+  $('results-bulk').classList.remove('show');
+  try {
+    const res = await fetch('/api/bulk', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ isrcs: codes }) });
+    const data = await res.json();
+    if (!res.ok) { $('status-bulk').textContent = data.error || 'Error'; $('status-bulk').className='status error'; return; }
+    renderBulk(data.results);
+    $('status-bulk').textContent = '';
+  } catch (e) { $('status-bulk').textContent='Could not reach the server.'; $('status-bulk').className='status error'; }
+  finally { $('go-bulk').disabled = false; }
+}
+
+function renderBulk(results) {
+  const found = results.filter(r => r.found).length;
+  let html = '<div class="result-bar"><span>'+found+' of '+results.length+' tracks found</span></div>';
+  html += '<div class="tbl"><div class="trow head"><span>#</span><span>Track</span><span>Links</span></div>';
+  results.forEach((r, i) => {
+    if (!r.found) {
+      html += '<div class="trow"><span class="num">'+(i+1)+'</span>'+
+        '<div class="tname"><div class="t" style="color:#B0B0B0">Not found</div><div class="isrc">'+r.isrc+'</div></div><span></span></div>';
+      return;
+    }
+    const pills = BULK_PLATFORMS.map(([k,l]) => pill(k, l, r.links[k])).join('');
+    html += '<div class="trow">'+
+      '<span class="num">'+(i+1)+'</span>'+
+      '<div class="tname"><div class="t">'+(r.title||'')+'</div><div class="a">'+((r.artists||[]).join(', '))+'</div>'+
+        '<div class="isrc">'+r.isrc+' <button class="expand-btn" data-isrc="'+r.isrc+'">+ all platforms</button></div></div>'+
+      '<div class="plat-pills">'+pills+'</div>'+
+      '<div class="expand" id="exp-'+r.isrc+'"></div>'+
+      '</div>';
+  });
+  html += '</div>';
+  const box = $('results-bulk'); box.innerHTML = html; box.classList.add('show');
+}
+
+$('go-bulk').addEventListener('click', bulk);
+$('results-bulk').addEventListener('click', async e => {
+  const cp = e.target.closest('.copy-p');
+  if (cp) { copyText(decodeURIComponent(cp.dataset.url), cp.closest('.pill')); return; }
+  const exp = e.target.closest('.expand-btn');
+  if (exp) {
+    const isrc = exp.dataset.isrc, box = $('exp-'+isrc);
+    if (box.classList.contains('show')) { box.classList.remove('show'); exp.textContent='+ all platforms'; return; }
+    box.classList.add('show'); box.innerHTML = '<span class="spinner"></span> loading all platforms'; exp.textContent = '– hide';
+    try {
+      const res = await fetch('/api/lookup?isrc=' + encodeURIComponent(isrc));
+      const data = await res.json();
+      box.innerHTML = res.ok
+        ? '<div class="plat-pills" style="justify-content:flex-start">'+PLATFORMS.map(([k,l]) => pill(k,l,data.links[k])).join('')+'</div>'
+        : '<span style="color:#B0B0B0;font-size:12px">Could not load</span>';
+    } catch (err) { box.innerHTML = '<span style="color:#B0B0B0;font-size:12px">Error</span>'; }
+  }
+});
+
+/* ---------- UPC ---------- */
+async function upc() {
+  const codes = [...new Set($('upc-input').value.split(/[\s,;]+/).map(s=>s.trim()).filter(Boolean))];
+  if (!codes.length) return;
+  $('go-upc').disabled = true;
+  $('status-upc').innerHTML = '<span class="spinner"></span>Fetching '+codes.length+' album(s)';
+  $('status-upc').className = 'status';
+  $('results-upc').classList.remove('show');
+  try {
+    const res = await fetch('/api/upc', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ upcs: codes }) });
+    const data = await res.json();
+    if (!res.ok) { $('status-upc').textContent = data.error || 'Error'; $('status-upc').className='status error'; return; }
+    renderUpc(data.albums);
+    $('status-upc').textContent = '';
+  } catch (e) { $('status-upc').textContent='Could not reach the server.'; $('status-upc').className='status error'; }
+  finally { $('go-upc').disabled = false; }
+}
+
+function renderUpc(albums) {
+  let html = '';
+  albums.forEach(a => {
+    if (!a.found) { html += '<div class="album-block"><div class="album-head"><div><div class="t">Album not found</div><div class="upc">UPC '+a.upc+'</div></div></div></div>'; return; }
+    const al = a.album;
+    html += '<div class="album-block"><div class="album-head">'+
+      (al.artwork ? '<img src="'+al.artwork+'">' : '')+
+      '<div><div class="t">'+(al.title||'')+'</div><div class="a">'+((al.artists||[]).join(', '))+'</div>'+
+      '<div class="upc">UPC '+al.upc+(al.label?' · '+al.label:'')+' · '+a.tracks.length+' tracks</div></div></div>';
+    html += '<div class="tbl"><div class="trow head"><span>#</span><span>Track</span><span>Links</span></div>';
+    a.tracks.forEach((t, i) => {
+      const pills = BULK_PLATFORMS.map(([k,l]) => pill(k,l,t.links[k])).join('');
+      html += '<div class="trow"><span class="num">'+(i+1)+'</span>'+
+        '<div class="tname"><div class="t">'+(t.title||'')+'</div>'+
+          '<div class="isrc">'+(t.isrc||'—')+(t.isrc?' <span class="copy-isrc" data-isrc="'+t.isrc+'" style="cursor:pointer">⧉</span>':'')+'</div></div>'+
+        '<div class="plat-pills">'+pills+'</div></div>';
+    });
+    html += '</div></div>';
+  });
+  const box = $('results-upc'); box.innerHTML = html; box.classList.add('show');
+}
+$('go-upc').addEventListener('click', upc);
+$('results-upc').addEventListener('click', e => {
+  const cp = e.target.closest('.copy-p');
+  if (cp) { copyText(decodeURIComponent(cp.dataset.url), cp.closest('.pill')); return; }
+  const ci = e.target.closest('.copy-isrc');
+  if (ci) { copyText(ci.dataset.isrc, ci, false); }
 });
 </script>
 </body>
