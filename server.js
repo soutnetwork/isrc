@@ -40,17 +40,49 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
+// fetch with timeout
+async function fetchT(url, opts = {}, timeoutMs = 12000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally { clearTimeout(timer); }
+}
+
+// Spotify GET.
+// Returns parsed JSON on 2xx (even if results are empty).
+// THROWS on transient failure (429/5xx/network) after exhausting retries,
+// so callers can tell "request failed" apart from "found nothing".
 async function spotifyGet(url, attempt = 0) {
-  const token = await getSpotifyToken();
-  const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-  if (res.status === 429 && attempt < 4) {
-    const retryAfter = parseInt(res.headers.get('retry-after') || '1', 10);
-    await new Promise(r => setTimeout(r, (retryAfter + 1) * 1000));
-    return spotifyGet(url, attempt + 1);
+  const MAX = 6;
+  let res;
+  try {
+    const token = await getSpotifyToken();
+    res = await fetchT(url, { headers: { 'Authorization': `Bearer ${token}` } });
+  } catch (netErr) {
+    if (attempt < MAX) { await sleep(backoff(attempt)); return spotifyGet(url, attempt + 1); }
+    throw new Error('Spotify network error: ' + netErr.message);
   }
-  if (!res.ok) return null;
+  if (res.status === 429) {
+    const ra = parseInt(res.headers.get('retry-after') || '2', 10);
+    if (attempt < MAX) { await sleep((ra + 1) * 1000); return spotifyGet(url, attempt + 1); }
+    throw new Error('Spotify rate-limited');
+  }
+  if (res.status >= 500) {
+    if (attempt < MAX) { await sleep(backoff(attempt)); return spotifyGet(url, attempt + 1); }
+    throw new Error('Spotify server error ' + res.status);
+  }
+  if (res.status === 401) { // token expired mid-flight
+    spotifyToken = null;
+    if (attempt < MAX) { await sleep(300); return spotifyGet(url, attempt + 1); }
+    throw new Error('Spotify auth error');
+  }
+  if (res.status === 404) return null;           // genuine not found
+  if (!res.ok) throw new Error('Spotify error ' + res.status);
   return res.json();
 }
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+function backoff(attempt){ return Math.min(8000, 500 * Math.pow(2, attempt)) + Math.floor(Math.random()*300); }
 
 function shapeSpotifyTrack(track) {
   if (!track) return null;
@@ -102,12 +134,16 @@ async function spotifyAlbumByUpc(upc) {
     if (tr && tr.tracks) tr.tracks.filter(Boolean).forEach(f => { idToFull[f.id] = f; });
   }
   // 2b) For any track still missing an ISRC, ask the single-track endpoint directly.
-  //     (You have the track ID, so the ISRC is always reachable this way.)
+  //     Errors here PROPAGATE (via Promise.all) so the whole UPC is retried rather
+  //     than returning a track with a silently-missing ISRC.
   const missing = ids.filter(id => !(idToFull[id] && idToFull[id].external_ids && idToFull[id].external_ids.isrc));
-  await mapLimit(missing, 6, async (id) => {
-    const t = await spotifyGet(`https://api.spotify.com/v1/tracks/${id}`);
-    if (t) idToFull[id] = t;
-  });
+  for (let i = 0; i < missing.length; i += 3) {
+    const chunk = missing.slice(i, i + 3);
+    await Promise.all(chunk.map(async (id) => {
+      const t = await spotifyGet(`https://api.spotify.com/v1/tracks/${id}`); // throws on transient failure
+      if (t) idToFull[id] = t;
+    }));
+  }
 
   // 3) Build final track list — falls back to simplified data if enrich missed
   const tracks = simple.map(s => {
@@ -140,11 +176,13 @@ async function spotifyAlbumByUpc(upc) {
 
 // ================= Deezer =================
 async function lookupDeezerTrack(isrc) {
-  const res = await fetch(`https://api.deezer.com/track/isrc:${encodeURIComponent(isrc)}`);
-  if (!res.ok) return null;
-  const data = await res.json();
-  if (data.error) return null;
-  return data;
+  try {
+    const res = await fetchT(`https://api.deezer.com/track/isrc:${encodeURIComponent(isrc)}`, {}, 8000);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.error) return null;
+    return data;
+  } catch (e) { return null; }
 }
 async function lookupDeezerAlbum(albumId) {
   const res = await fetch(`https://api.deezer.com/album/${albumId}`);
@@ -159,7 +197,7 @@ async function lookupItunes(isrc) {
   const countries = ['US', 'EG', 'SA', 'GB'];
   for (const country of countries) {
     try {
-      const res = await fetch(`https://itunes.apple.com/lookup?isrc=${encodeURIComponent(isrc)}&country=${country}&entity=song`);
+      const res = await fetchT(`https://itunes.apple.com/lookup?isrc=${encodeURIComponent(isrc)}&country=${country}&entity=song`, {}, 7000);
       if (!res.ok) continue;
       const data = await res.json();
       const song = data.results && data.results.find(r => r.wrapperType === 'track');
@@ -323,37 +361,52 @@ app.post('/api/bulk', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Bulk lookup failed', detail: err.message }); }
 });
 
+// Resolve a single UPC into a result row. Distinguishes:
+//   found:true            -> album resolved
+//   found:false           -> genuinely not on Spotify
+//   found:false, error:.. -> transient failure (should be retried)
+async function resolveUpcRow(upc, tries = 3) {
+  for (let attempt = 0; attempt < tries; attempt++) {
+    try {
+      const found = await spotifyAlbumByUpc(upc);
+      if (!found) return { upc, found: false };            // genuine not found
+      const tracks = await mapLimit(found.tracks, 3, async (t) => {
+        if (!t) return null;
+        let appleUrl = null, deezerUrl = null;
+        if (t.isrc) {
+          const [it, dz] = await Promise.allSettled([lookupItunes(t.isrc), lookupDeezerTrack(t.isrc)]);
+          appleUrl = it.status === 'fulfilled' && it.value ? it.value.trackViewUrl : null;
+          deezerUrl = dz.status === 'fulfilled' && dz.value ? dz.value.link : null;
+        }
+        return { isrc: t.isrc, title: t.title, artists: t.artists,
+          links: { spotify: t.url, appleMusic: appleUrl, deezer: deezerUrl } };
+      });
+      return { upc, found: true, album: found.album, tracks: tracks.filter(Boolean) };
+    } catch (e) {
+      if (attempt < tries - 1) { await sleep(backoff(attempt + 1)); continue; }
+      return { upc, found: false, error: e.message || 'failed' };  // transient, still failing
+    }
+  }
+}
+
 // UPC -> album + its tracks (each with ISRC + Spotify/Apple/Deezer)
 app.post('/api/upc', async (req, res) => {
   let upcs = Array.isArray(req.body.upcs) ? req.body.upcs : [];
-  // Keep every input UPC in its exact order (no dedup) so the output maps 1:1
-  // to the input — this lets you paste ISRCs back into the right rows.
+  // Keep every input UPC in its exact order (no dedup) so output maps 1:1 to input.
   upcs = upcs.map(cleanUpc).filter(x => x).slice(0, 150);
   if (!upcs.length) return res.status(400).json({ error: 'No valid UPCs provided.' });
   try {
-    const albums = await mapLimit(upcs, 4, async (upc) => {
-      try {
-        const found = await spotifyAlbumByUpc(upc);
-        if (!found) return { upc, found: false };
-        const tracks = await mapLimit(found.tracks, 6, async (t) => {
-          if (!t) return null;
-          let appleUrl = null, deezerUrl = null;
-          if (t.isrc) {
-            const [it, dz] = await Promise.allSettled([lookupItunes(t.isrc), lookupDeezerTrack(t.isrc)]);
-            appleUrl = it.status === 'fulfilled' && it.value ? it.value.trackViewUrl : null;
-            deezerUrl = dz.status === 'fulfilled' && dz.value ? dz.value.link : null;
-          }
-          return {
-            isrc: t.isrc, title: t.title, artists: t.artists,
-            links: { spotify: t.url, appleMusic: appleUrl, deezer: deezerUrl }
-          };
-        });
-        return { upc, found: true, album: found.album, tracks: tracks.filter(Boolean) };
-      } catch (e) {
-        return { upc, found: false, error: e.message };
-      }
-    });
-    res.json({ count: albums.length, albums });
+    // Pass 1: modest concurrency
+    let albums = await mapLimit(upcs, 3, (upc) => resolveUpcRow(upc, 3));
+
+    // Pass 2: retry ONLY the ones that hit a transient error, gently (concurrency 1)
+    const retryIdx = albums.map((a, i) => (a && a.error) ? i : -1).filter(i => i >= 0);
+    for (const i of retryIdx) {
+      albums[i] = await resolveUpcRow(upcs[i], 4);
+    }
+
+    const errors = albums.filter(a => a && a.error).length;
+    res.json({ count: albums.length, errored: errors, albums });
   } catch (err) { res.status(500).json({ error: 'UPC lookup failed', detail: err.message }); }
 });
 
