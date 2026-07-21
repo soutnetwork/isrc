@@ -93,6 +93,18 @@
   .tab:hover { color: var(--text); }
   .tab.active { background: var(--card-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-2); }
 
+  /* ---- ISRC format toggle ---- */
+  .fmt-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 26px; }
+  .fmt-label { font-size: 12px; color: var(--text-3); font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.04em; }
+  .fmt-toggle { display: inline-flex; gap: 3px; background: var(--card); border: 1px solid var(--line); padding: 3px; border-radius: 9px; }
+  .fmt-opt {
+    border: none; background: transparent; cursor: pointer;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--text-3);
+    padding: 6px 11px; border-radius: 7px; transition: all .12s;
+  }
+  .fmt-opt:hover { color: var(--text-2); }
+  .fmt-opt.active { background: var(--card-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-2); }
+
   /* ---- Inputs ---- */
   .panel {
     background: var(--card); border: 1px solid var(--line);
@@ -256,6 +268,14 @@
     </div>
   </div>
 
+  <div class="fmt-row">
+    <span class="fmt-label">ISRC format</span>
+    <div class="fmt-toggle">
+      <button class="fmt-opt active" data-fmt="dash">FR-59R-24-16176</button>
+      <button class="fmt-opt" data-fmt="plain">FR59R2416176</button>
+    </div>
+  </div>
+
   <div class="mode" id="mode-single">
     <div class="panel">
       <div class="search">
@@ -322,6 +342,16 @@ const PLATFORMS = [
 ];
 const BULK_PLATFORMS = [['spotify','Spotify'],['appleMusic','Apple'],['deezer','Deezer']];
 
+// ISRC display format: true = with dashes (FR-59R-24-16176)
+let isrcDashes = true;
+function fmtIsrc(raw) {
+  if (!raw) return raw;
+  const s = String(raw).toUpperCase().replace(/[-\s]/g, '');
+  if (!isrcDashes) return s;
+  if (s.length !== 12) return s;
+  return s.slice(0,2) + '-' + s.slice(2,5) + '-' + s.slice(5,7) + '-' + s.slice(7);
+}
+
 function copyText(text, el, restore) {
   navigator.clipboard.writeText(text).then(() => {
     const prev = el.innerHTML;
@@ -337,6 +367,18 @@ document.querySelectorAll('.tab').forEach(tab => {
     tab.classList.add('active');
     ['single','bulk','upc'].forEach(m => $('mode-' + m).style.display = 'none');
     $('mode-' + tab.dataset.mode).style.display = 'block';
+  });
+});
+
+// ISRC format toggle — re-render whatever is currently shown
+document.querySelectorAll('.fmt-opt').forEach(opt => {
+  opt.addEventListener('click', () => {
+    document.querySelectorAll('.fmt-opt').forEach(o => o.classList.remove('active'));
+    opt.classList.add('active');
+    isrcDashes = opt.dataset.fmt === 'dash';
+    if (window._lastSingle) renderSingle(window._lastSingle);
+    if (window._bulkData && window._bulkData.length) renderBulk(window._bulkData);
+    if (window._upcData && window._upcData.length) renderUpc(window._upcData);
   });
 });
 
@@ -360,13 +402,15 @@ async function single() {
 }
 function fmtDur(ms){ if(!ms) return null; const s=Math.round(ms/1000); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
 
-function renderSingle({ core, links }) {
+function renderSingle(data) {
+  window._lastSingle = data;
+  const { core, links } = data;
   $('t-title').textContent = core.title || 'Unknown title';
   $('t-artist').textContent = (core.artists||[]).filter(Boolean).join(', ');
   const art = $('art');
   if (core.artwork) { art.src = core.artwork; art.style.display=''; } else { art.style.display='none'; }
 
-  const facts = [['ISRC', core.isrc, true]];
+  const facts = [['ISRC', fmtIsrc(core.isrc), true]];
   if (core.upc) facts.push(['UPC', core.upc, true]);
   if (core.label) facts.push(['Label', core.label, false]);
   if (core.releaseDate) facts.push(['Released', core.releaseDate, false]);
@@ -409,7 +453,7 @@ function bindPillCopy(container) {
     const cp = e.target.closest('.cp');
     if (cp) { copyText(decodeURIComponent(cp.dataset.url), cp.closest('.pill')); return; }
     const mini = e.target.closest('.isrc .mini');
-    if (mini) { copyText(mini.dataset.isrc, mini, false); return; }
+    if (mini) { copyText(fmtIsrc(mini.dataset.isrc), mini, false); return; }
     const exp = e.target.closest('.expand-btn');
     if (exp) {
       const isrc = exp.dataset.isrc, box = $('exp-'+isrc);
@@ -457,7 +501,7 @@ function renderBulk(results) {
     const pills = BULK_PLATFORMS.map(([k,l]) => pill(k, l, r.links[k])).join('');
     html += '<div class="trow"><span class="num">'+(i+1)+'</span>'+
       '<div class="tname"><div class="t">'+(r.title||'')+'</div><div class="a">'+((r.artists||[]).join(', '))+'</div>'+
-      '<div class="isrc"><span>'+r.isrc+'</span><span class="mini" data-isrc="'+r.isrc+'">'+COPY+'</span><button class="expand-btn" data-isrc="'+r.isrc+'">+ all platforms</button></div></div>'+
+      '<div class="isrc"><span>'+fmtIsrc(r.isrc)+'</span><span class="mini" data-isrc="'+r.isrc+'">'+COPY+'</span><button class="expand-btn" data-isrc="'+r.isrc+'">+ all platforms</button></div></div>'+
       '<div class="pills">'+pills+'</div>'+
       '<div class="expand" id="exp-'+r.isrc+'"></div></div>';
   });
@@ -472,7 +516,7 @@ function downloadBulkCsv() {
   const rows = [['ISRC','Track','Artist','Spotify','Apple Music','Deezer']];
   results.forEach(r => {
     if (!r.found) { rows.push([r.isrc,'NOT FOUND','','','','']); return; }
-    rows.push([r.isrc, r.title||'', (r.artists||[]).join(', '), r.links.spotify||'', r.links.appleMusic||'', r.links.deezer||'']);
+    rows.push([fmtIsrc(r.isrc), r.title||'', (r.artists||[]).join(', '), r.links.spotify||'', r.links.appleMusic||'', r.links.deezer||'']);
   });
   const csv = rows.map(r => r.map(csvCell).join(',')).join('\r\n');
   const blob = new Blob(['\ufeff'+csv], { type: 'text/csv;charset=utf-8;' });
@@ -514,7 +558,7 @@ function renderUpc(albums) {
     a.tracks.forEach((t, i) => {
       const pills = BULK_PLATFORMS.map(([k,l]) => pill(k,l,t.links[k])).join('');
       const isrcRow = t.isrc
-        ? '<div class="isrc"><span>'+t.isrc+'</span><span class="mini" data-isrc="'+t.isrc+'">'+COPY+'</span><button class="expand-btn" data-isrc="'+t.isrc+'">+ all platforms</button></div>'
+        ? '<div class="isrc"><span>'+fmtIsrc(t.isrc)+'</span><span class="mini" data-isrc="'+t.isrc+'">'+COPY+'</span><button class="expand-btn" data-isrc="'+t.isrc+'">+ all platforms</button></div>'
         : '<div class="isrc">— no ISRC</div>';
       html += '<div class="trow"><span class="num">'+(i+1)+'</span>'+
         '<div class="tname"><div class="t">'+(t.title||'')+'</div>'+isrcRow+'</div>'+
@@ -533,7 +577,7 @@ function downloadUpcCsv() {
   albums.forEach(a => {
     if (!a.found) { rows.push([a.upc,'NOT FOUND','','','','','','','']); return; }
     a.tracks.forEach((t,i) => {
-      rows.push([a.album.upc, a.album.title, (a.album.artists||[]).join(', '), i+1, t.title, t.isrc||'', t.links.spotify||'', t.links.appleMusic||'', t.links.deezer||'']);
+      rows.push([a.album.upc, a.album.title, (a.album.artists||[]).join(', '), i+1, t.title, fmtIsrc(t.isrc)||'', t.links.spotify||'', t.links.appleMusic||'', t.links.deezer||'']);
     });
   });
   const csv = rows.map(r => r.map(csvCell).join(',')).join('\r\n');
