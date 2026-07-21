@@ -88,14 +88,21 @@ async function spotifyAlbumByUpc(upc) {
     else break;
   }
 
-  // 2) Enrich each track with ISRC (and full data) via /tracks?ids=. Tolerate failures.
+  // 2) Enrich each track with ISRC via /tracks?ids= (batch). Include market.
   const idToFull = {};
   const ids = simple.map(t => t.id).filter(Boolean);
   for (let i = 0; i < ids.length; i += 50) {
     const batch = ids.slice(i, i + 50);
-    const tr = await spotifyGet(`https://api.spotify.com/v1/tracks?ids=${batch.join(',')}`);
+    const tr = await spotifyGet(`https://api.spotify.com/v1/tracks?ids=${batch.join(',')}&market=US`);
     if (tr && tr.tracks) tr.tracks.filter(Boolean).forEach(f => { idToFull[f.id] = f; });
   }
+  // 2b) For any track still missing an ISRC, ask the single-track endpoint directly.
+  //     (You have the track ID, so the ISRC is always reachable this way.)
+  const missing = ids.filter(id => !(idToFull[id] && idToFull[id].external_ids && idToFull[id].external_ids.isrc));
+  await mapLimit(missing, 6, async (id) => {
+    const t = await spotifyGet(`https://api.spotify.com/v1/tracks/${id}`);
+    if (t) idToFull[id] = t;
+  });
 
   // 3) Build final track list — falls back to simplified data if enrich missed
   const tracks = simple.map(s => {
