@@ -84,7 +84,17 @@ async function spotifyGet(url, attempt = 0) {
     throw new Error('Spotify auth error');
   }
   if (res.status === 404) return null;           // genuine not found
-  if (!res.ok) throw new Error('Spotify error ' + res.status);
+  if (!res.ok) {
+    // Include which endpoint failed — essential for diagnosing 401/403.
+    let where = 'unknown';
+    if (url.includes('/search')) where = url.includes('upc%3A') ? 'search-upc' : 'search-isrc';
+    else if (url.includes('/albums/')) where = 'album';
+    else if (url.includes('/tracks?')) where = 'tracks-batch';
+    else if (url.includes('/tracks/')) where = 'track-single';
+    let body = '';
+    try { const j = await res.json(); body = (j && j.error && j.error.message) ? (' - ' + j.error.message) : ''; } catch (e) {}
+    throw new Error('Spotify ' + res.status + ' on ' + where + body);
+  }
   return res.json();
 }
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
