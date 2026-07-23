@@ -384,8 +384,8 @@ app.post('/api/bulk', async (req, res) => {
 //   found:true            -> album resolved
 //   found:false           -> genuinely not on Spotify
 //   found:false, error:.. -> transient failure (should be retried)
-async function resolveUpcRow(upc, tries = 3) {
-  const ck = 'upc:' + upc;
+async function resolveUpcRow(upc, tries = 3, fast = false) {
+  const ck = 'upc:' + upc + (fast ? ':f' : '');
   const hit = cache.get(ck);
   if (hit && Date.now() - hit.time < hit.ttl) return hit.payload;
   for (let attempt = 0; attempt < tries; attempt++) {
@@ -395,8 +395,9 @@ async function resolveUpcRow(upc, tries = 3) {
       const tracks = await mapLimit(found.tracks, 6, async (t) => {
         if (!t) return null;
         let appleUrl = null, deezerUrl = null;
-        if (t.isrc) {
-          // Links are a bonus — never let them hold up the ISRC data.
+        // Fast mode: ISRC + Spotify only (all that's needed for the database).
+        // Apple/Deezer can be pulled per-track later via "+ all platforms".
+        if (!fast && t.isrc) {
           const [it, dz] = await Promise.all([
             withDeadline(lookupItunes(t.isrc), 5000, null),
             withDeadline(lookupDeezerTrack(t.isrc), 5000, null)
@@ -408,7 +409,7 @@ async function resolveUpcRow(upc, tries = 3) {
           links: { spotify: t.url, appleMusic: appleUrl, deezer: deezerUrl } };
       });
       const row = { upc, found: true, album: found.album, tracks: tracks.filter(Boolean) };
-      cache.set('upc:' + upc, { time: Date.now(), ttl: CACHE_TTL, payload: row });
+      cache.set(ck, { time: Date.now(), ttl: CACHE_TTL, payload: row });
       return row;
     } catch (e) {
       if (e && e.rateLimited) {
@@ -426,22 +427,21 @@ app.post('/api/upc', async (req, res) => {
   let upcs = Array.isArray(req.body.upcs) ? req.body.upcs : [];
   // Keep every input UPC in its exact order (no dedup) so output maps 1:1 to input.
   upcs = upcs.map(cleanUpc).filter(x => x).slice(0, 150);
+  const fast = req.body.fast !== false;   // default: fast (ISRC + Spotify)
   if (!upcs.length) return res.status(400).json({ error: 'No valid UPCs provided.' });
   try {
-    // Pass 1: modest concurrency
-    let albums = await mapLimit(upcs, 2, (upc) => resolveUpcRow(upc, 3));
+    // Pass 1
+    let albums = await mapLimit(upcs, fast ? 5 : 2, (upc) => resolveUpcRow(upc, 3, fast));
 
-    // If Spotify is in a cool-down window, stop here and tell the client plainly.
     const rateLimited = albums.some(a => a && a.error === 'RATE_LIMITED');
 
-    // Pass 2: retry ONLY transient errors (not rate-limit), gently, one at a time
     if (!rateLimited) {
       const retryIdx = albums.map((a, i) => (a && a.error) ? i : -1).filter(i => i >= 0);
-      for (const i of retryIdx) albums[i] = await resolveUpcRow(upcs[i], 3);
+      for (const i of retryIdx) albums[i] = await resolveUpcRow(upcs[i], 3, fast);
     }
 
     const errors = albums.filter(a => a && a.error).length;
-    res.json({ count: albums.length, errored: errors, rateLimited, albums });
+    res.json({ count: albums.length, errored: errors, rateLimited, fast, albums });
   } catch (err) { res.status(500).json({ error: 'UPC lookup failed', detail: err.message }); }
 });
 

@@ -315,7 +315,10 @@
       <textarea id="upc-input" placeholder="Paste UPC / barcode — one per line&#10;00602547461445"></textarea>
       <div class="actions">
         <button class="btn" id="go-upc">Get tracks</button>
-        <span class="hint">Returns every track inside the album with its ISRC and links.</span>
+        <label class="hint" style="display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none">
+          <input type="checkbox" id="upc-fast" checked style="accent-color:#fff;width:15px;height:15px;cursor:pointer">
+          Fast mode — ISRC + Spotify only (much quicker for big lists)
+        </label>
       </div>
     </div>
     <div class="status" id="status-upc"></div>
@@ -553,7 +556,8 @@ async function upc() {
   $('results-upc').classList.remove('show');
   $('status-upc').className = 'status';
 
-  const CHUNK = 6;                 // small batches -> no proxy timeout
+  const fast = $('upc-fast').checked;
+  const CHUNK = fast ? 12 : 5;
   const all = new Array(codes.length);
   let done = 0, failedChunks = 0;
 
@@ -565,7 +569,7 @@ async function upc() {
       // retry a chunk up to 3 times before giving up on it
       for (let attempt = 0; attempt < 3 && !ok; attempt++) {
         try {
-          const res = await fetch('/api/upc', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ upcs: slice }) });
+          const res = await fetch('/api/upc', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ upcs: slice, fast }) });
           if (!res.ok) throw new Error('http '+res.status);
           const data = await res.json();
           (data.albums||[]).forEach((a, j) => { all[i + j] = a; });
@@ -604,10 +608,28 @@ async function upc() {
 function renderUpc(albums) {
   window._upcData = albums;
   const totalTracks = albums.reduce((n,a)=> n + (a.found ? a.tracks.length : 0), 0);
-  let html = '<div class="rbar"><span>'+albums.filter(a=>a.found).length+' album(s) · '+totalTracks+' tracks</span>'+
+  const okCount = albums.filter(a=>a.found).length;
+  const retryCount = albums.filter(a=>!a.found && a.error).length;
+  const notOnSpotify = albums.filter(a=>!a.found && !a.error).length;
+  let summary = okCount+' found · '+totalTracks+' tracks';
+  if (notOnSpotify) summary += ' · '+notOnSpotify+' not on Spotify';
+  if (retryCount) summary += ' · <span style="color:#F0716A">'+retryCount+' need retry</span>';
+  let html = '<div class="rbar"><span>'+summary+'</span>'+
     '<span style="display:flex;gap:8px"><button class="ibtn" id="upc-csv">'+DOWNLOAD+'<span>Download CSV</span></button></span></div>';
   albums.forEach(a => {
-    if (!a.found) { html += '<div class="album-block"><div class="album-head"><div><div class="t">Album not found</div><div class="upc">UPC '+a.upc+'</div></div></div></div>'; return; }
+    if (!a.found) {
+      const isErr = !!a.error;
+      const label = isErr
+        ? (a.error === 'RATE_LIMITED' ? 'Lookup failed — Spotify is rate-limiting' : 'Lookup failed — not confirmed')
+        : 'Not on Spotify';
+      const note = isErr
+        ? '<div class="upc" style="color:#F0716A">RETRY THIS ONE — result not confirmed</div>'
+        : '<div class="upc">Confirmed: this UPC is not on Spotify</div>';
+      html += '<div class="album-block"><div class="album-head" '+(isErr?'style="border-color:rgba(240,113,106,0.4)"':'')+'>'+
+        '<div><div class="t" '+(isErr?'style="color:#F0716A"':'')+'>'+label+'</div>'+
+        '<div class="upc">UPC '+a.upc+'</div>'+note+'</div></div></div>';
+      return;
+    }
     const al = a.album;
     html += '<div class="album-block"><div class="album-head">'+
       (al.artwork ? '<img src="'+al.artwork+'">' : '')+
@@ -635,8 +657,12 @@ function downloadUpcCsv() {
   const rows = [['Status','UPC','Album','Artist','Track #','Track','ISRC','Spotify','Apple Music','Deezer']];
   albums.forEach(a => {
     if (!a.found) {
-      // UPC not found on Spotify — still write one row so the order is preserved
-      rows.push(['UPC NOT FOUND', a.upc, '', '', '', '', '', '', '', '']);
+      // Critical distinction: a failed request must NEVER look like a confirmed
+      // "not on Spotify", otherwise bad data reaches the database.
+      const status = a.error
+        ? (a.error === 'RATE_LIMITED' ? 'RETRY - RATE LIMITED' : 'RETRY - LOOKUP FAILED')
+        : 'NOT ON SPOTIFY';
+      rows.push([status, a.upc, '', '', '', '', '', '', '', '']);
       return;
     }
     if (!a.tracks.length) {
