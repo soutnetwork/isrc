@@ -89,6 +89,13 @@ async function spotifyGet(url, attempt = 0) {
 }
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 function backoff(attempt){ return Math.min(8000, 500 * Math.pow(2, attempt)) + Math.floor(Math.random()*300); }
+// Resolve with `fallback` if the promise takes longer than ms (never rejects).
+function withDeadline(promise, ms, fallback = null) {
+  return Promise.race([
+    promise.catch(() => fallback),
+    new Promise(r => setTimeout(() => r(fallback), ms))
+  ]);
+}
 
 function shapeSpotifyTrack(track) {
   if (!track) return null;
@@ -199,18 +206,24 @@ async function lookupDeezerAlbum(albumId) {
 }
 
 // ================= iTunes / Apple =================
+// Query all storefronts IN PARALLEL with a short timeout.
+// (Sequential storefronts were the main cause of very slow UPC batches:
+//  a track missing from Apple used to cost 4 x 7s = 28s on its own.)
 async function lookupItunes(isrc) {
   const countries = ['US', 'EG', 'SA', 'GB'];
-  for (const country of countries) {
-    try {
-      const res = await fetchT(`https://itunes.apple.com/lookup?isrc=${encodeURIComponent(isrc)}&country=${country}&entity=song`, {}, 7000);
-      if (!res.ok) continue;
-      const data = await res.json();
-      const song = data.results && data.results.find(r => r.wrapperType === 'track');
-      if (song) return song;
-    } catch (e) {}
+  const tasks = countries.map(async (country) => {
+    const res = await fetchT(`https://itunes.apple.com/lookup?isrc=${encodeURIComponent(isrc)}&country=${country}&entity=song`, {}, 4000);
+    if (!res.ok) throw new Error('bad');
+    const data = await res.json();
+    const song = data.results && data.results.find(r => r.wrapperType === 'track');
+    if (!song) throw new Error('none');
+    return song;
+  });
+  try {
+    return await Promise.any(tasks);   // first storefront that has it wins
+  } catch (e) {
+    return null;                       // none of them had it
   }
-  return null;
 }
 
 // ================= Odesli =================
@@ -379,13 +392,17 @@ async function resolveUpcRow(upc, tries = 3) {
     try {
       const found = await spotifyAlbumByUpc(upc);
       if (!found) return { upc, found: false };            // genuine not found
-      const tracks = await mapLimit(found.tracks, 3, async (t) => {
+      const tracks = await mapLimit(found.tracks, 6, async (t) => {
         if (!t) return null;
         let appleUrl = null, deezerUrl = null;
         if (t.isrc) {
-          const [it, dz] = await Promise.allSettled([lookupItunes(t.isrc), lookupDeezerTrack(t.isrc)]);
-          appleUrl = it.status === 'fulfilled' && it.value ? it.value.trackViewUrl : null;
-          deezerUrl = dz.status === 'fulfilled' && dz.value ? dz.value.link : null;
+          // Links are a bonus — never let them hold up the ISRC data.
+          const [it, dz] = await Promise.all([
+            withDeadline(lookupItunes(t.isrc), 5000, null),
+            withDeadline(lookupDeezerTrack(t.isrc), 5000, null)
+          ]);
+          appleUrl = it ? it.trackViewUrl : null;
+          deezerUrl = dz ? dz.link : null;
         }
         return { isrc: t.isrc, title: t.title, artists: t.artists,
           links: { spotify: t.url, appleMusic: appleUrl, deezer: deezerUrl } };
