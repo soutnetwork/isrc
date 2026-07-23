@@ -64,9 +64,15 @@ async function spotifyGet(url, attempt = 0) {
     throw new Error('Spotify network error: ' + netErr.message);
   }
   if (res.status === 429) {
-    const ra = parseInt(res.headers.get('retry-after') || '2', 10);
-    if (attempt < MAX) { await sleep((ra + 1) * 1000); return spotifyGet(url, attempt + 1); }
-    throw new Error('Spotify rate-limited');
+    const raRaw = parseInt(res.headers.get('retry-after') || '2', 10);
+    // Spotify can send a very large Retry-After during a cool-down window.
+    // Never block on it — cap the wait, and give up quickly with a clear error.
+    const waitMs = Math.min(isNaN(raRaw) ? 2000 : raRaw * 1000, 6000);
+    if (attempt < 2) { await sleep(waitMs); return spotifyGet(url, attempt + 1); }
+    const err = new Error('RATE_LIMITED');
+    err.rateLimited = true;
+    err.retryAfter = isNaN(raRaw) ? null : raRaw;
+    throw err;
   }
   if (res.status >= 500) {
     if (attempt < MAX) { await sleep(backoff(attempt)); return spotifyGet(url, attempt + 1); }
@@ -366,6 +372,9 @@ app.post('/api/bulk', async (req, res) => {
 //   found:false           -> genuinely not on Spotify
 //   found:false, error:.. -> transient failure (should be retried)
 async function resolveUpcRow(upc, tries = 3) {
+  const ck = 'upc:' + upc;
+  const hit = cache.get(ck);
+  if (hit && Date.now() - hit.time < hit.ttl) return hit.payload;
   for (let attempt = 0; attempt < tries; attempt++) {
     try {
       const found = await spotifyAlbumByUpc(upc);
@@ -381,10 +390,16 @@ async function resolveUpcRow(upc, tries = 3) {
         return { isrc: t.isrc, title: t.title, artists: t.artists,
           links: { spotify: t.url, appleMusic: appleUrl, deezer: deezerUrl } };
       });
-      return { upc, found: true, album: found.album, tracks: tracks.filter(Boolean) };
+      const row = { upc, found: true, album: found.album, tracks: tracks.filter(Boolean) };
+      cache.set('upc:' + upc, { time: Date.now(), ttl: CACHE_TTL, payload: row });
+      return row;
     } catch (e) {
+      if (e && e.rateLimited) {
+        // No point hammering — report it so the UI can tell the user to wait.
+        return { upc, found: false, error: 'RATE_LIMITED', retryAfter: e.retryAfter || null };
+      }
       if (attempt < tries - 1) { await sleep(backoff(attempt + 1)); continue; }
-      return { upc, found: false, error: e.message || 'failed' };  // transient, still failing
+      return { upc, found: false, error: e.message || 'failed' };
     }
   }
 }
@@ -397,17 +412,36 @@ app.post('/api/upc', async (req, res) => {
   if (!upcs.length) return res.status(400).json({ error: 'No valid UPCs provided.' });
   try {
     // Pass 1: modest concurrency
-    let albums = await mapLimit(upcs, 3, (upc) => resolveUpcRow(upc, 3));
+    let albums = await mapLimit(upcs, 2, (upc) => resolveUpcRow(upc, 3));
 
-    // Pass 2: retry ONLY the ones that hit a transient error, gently (concurrency 1)
-    const retryIdx = albums.map((a, i) => (a && a.error) ? i : -1).filter(i => i >= 0);
-    for (const i of retryIdx) {
-      albums[i] = await resolveUpcRow(upcs[i], 4);
+    // If Spotify is in a cool-down window, stop here and tell the client plainly.
+    const rateLimited = albums.some(a => a && a.error === 'RATE_LIMITED');
+
+    // Pass 2: retry ONLY transient errors (not rate-limit), gently, one at a time
+    if (!rateLimited) {
+      const retryIdx = albums.map((a, i) => (a && a.error) ? i : -1).filter(i => i >= 0);
+      for (const i of retryIdx) albums[i] = await resolveUpcRow(upcs[i], 3);
     }
 
     const errors = albums.filter(a => a && a.error).length;
-    res.json({ count: albums.length, errored: errors, albums });
+    res.json({ count: albums.length, errored: errors, rateLimited, albums });
   } catch (err) { res.status(500).json({ error: 'UPC lookup failed', detail: err.message }); }
+});
+
+// Quick diagnostic: is Spotify reachable / are we rate-limited right now?
+app.get('/api/health', async (req, res) => {
+  const out = { ok: true, spotify: 'unknown', cacheEntries: cache.size };
+  try {
+    const t0 = Date.now();
+    const data = await spotifyGet('https://api.spotify.com/v1/search?q=' + encodeURIComponent('upc:00602547461445') + '&type=album&limit=1');
+    out.spotify = data ? 'ok' : 'no-result';
+    out.ms = Date.now() - t0;
+  } catch (e) {
+    out.ok = false;
+    out.spotify = e && e.rateLimited ? 'RATE_LIMITED' : ('error: ' + (e.message||'')); 
+    if (e && e.retryAfter) out.retryAfter = e.retryAfter;
+  }
+  res.json(out);
 });
 
 app.listen(PORT, () => console.log(`ISRC Lookup Tool running on http://localhost:${PORT}`));

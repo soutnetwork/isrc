@@ -569,6 +569,15 @@ async function upc() {
           if (!res.ok) throw new Error('http '+res.status);
           const data = await res.json();
           (data.albums||[]).forEach((a, j) => { all[i + j] = a; });
+          if (data.rateLimited) {
+            // Spotify is cooling down — stop, keep what we have, tell the user.
+            for (let k = i + slice.length; k < codes.length; k++) all[k] = { upc: codes[k], found: false, error: 'not attempted' };
+            renderUpc(all.map((a, x) => a || { upc: codes[x], found: false, error: 'no response' }));
+            $('status-upc').innerHTML = 'Spotify is rate-limiting us right now. Got '+(i+slice.length)+' of '+codes.length+'. Wait ~1 minute and run the rest.';
+            $('status-upc').className = 'status error';
+            $('go-upc').disabled = false;
+            return;
+          }
           ok = true;
         } catch (e) {
           if (attempt === 2) {
