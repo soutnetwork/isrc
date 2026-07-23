@@ -475,14 +475,34 @@ async function bulk() {
   const codes = [...new Set($('bulk-input').value.split(/[\s,;]+/).map(s=>s.trim().toUpperCase()).filter(Boolean))];
   if (!codes.length) return;
   $('go-bulk').disabled = true;
-  $('status-bulk').innerHTML = '<span class="spinner"></span>Looking up '+codes.length+' tracks';
-  $('status-bulk').className = 'status';
   $('results-bulk').classList.remove('show');
+  $('status-bulk').className = 'status';
+
+  const CHUNK = 15;
+  const all = new Array(codes.length);
+  let done = 0;
+
   try {
-    const res = await fetch('/api/bulk', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ isrcs: codes }) });
-    const data = await res.json();
-    if (!res.ok) { $('status-bulk').textContent = data.error || 'Error'; $('status-bulk').className='status error'; return; }
-    renderBulk(data.results);
+    for (let i = 0; i < codes.length; i += CHUNK) {
+      const slice = codes.slice(i, i + CHUNK);
+      $('status-bulk').innerHTML = '<span class="spinner"></span>Looking up '+done+' / '+codes.length+' tracks';
+      let ok = false;
+      for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+        try {
+          const res = await fetch('/api/bulk', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ isrcs: slice }) });
+          if (!res.ok) throw new Error('http '+res.status);
+          const data = await res.json();
+          (data.results||[]).forEach((r, j) => { all[i + j] = r; });
+          ok = true;
+        } catch (e) {
+          if (attempt === 2) slice.forEach((c, j) => { all[i + j] = { isrc: c, found: false }; });
+          else await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
+        }
+      }
+      done += slice.length;
+      $('status-bulk').innerHTML = '<span class="spinner"></span>Looking up '+done+' / '+codes.length+' tracks';
+    }
+    renderBulk(all.map((r, i) => r || { isrc: codes[i], found: false }));
     $('status-bulk').textContent = '';
   } catch (e) { $('status-bulk').textContent='Could not reach the server.'; $('status-bulk').className='status error'; }
   finally { $('go-bulk').disabled = false; }
@@ -530,17 +550,47 @@ async function upc() {
   const codes = $('upc-input').value.split(/[\s,;]+/).map(s=>s.trim()).filter(Boolean);
   if (!codes.length) return;
   $('go-upc').disabled = true;
-  $('status-upc').innerHTML = '<span class="spinner"></span>Fetching '+codes.length+' album(s)';
-  $('status-upc').className = 'status';
   $('results-upc').classList.remove('show');
+  $('status-upc').className = 'status';
+
+  const CHUNK = 6;                 // small batches -> no proxy timeout
+  const all = new Array(codes.length);
+  let done = 0, failedChunks = 0;
+
   try {
-    const res = await fetch('/api/upc', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ upcs: codes }) });
-    const data = await res.json();
-    if (!res.ok) { $('status-upc').textContent = data.error || 'Error'; $('status-upc').className='status error'; return; }
-    renderUpc(data.albums);
-    $('status-upc').textContent = '';
-  } catch (e) { $('status-upc').textContent='Could not reach the server.'; $('status-upc').className='status error'; }
-  finally { $('go-upc').disabled = false; }
+    for (let i = 0; i < codes.length; i += CHUNK) {
+      const slice = codes.slice(i, i + CHUNK);
+      $('status-upc').innerHTML = '<span class="spinner"></span>Fetching '+(done)+' / '+codes.length+' UPCs';
+      let ok = false;
+      // retry a chunk up to 3 times before giving up on it
+      for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+        try {
+          const res = await fetch('/api/upc', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ upcs: slice }) });
+          if (!res.ok) throw new Error('http '+res.status);
+          const data = await res.json();
+          (data.albums||[]).forEach((a, j) => { all[i + j] = a; });
+          ok = true;
+        } catch (e) {
+          if (attempt === 2) {
+            failedChunks++;
+            slice.forEach((u, j) => { all[i + j] = { upc: u, found: false, error: 'request failed' }; });
+          } else {
+            await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+          }
+        }
+      }
+      done += slice.length;
+      $('status-upc').innerHTML = '<span class="spinner"></span>Fetching '+done+' / '+codes.length+' UPCs';
+    }
+
+    renderUpc(all.map((a, i) => a || { upc: codes[i], found: false, error: 'no response' }));
+    $('status-upc').textContent = failedChunks
+      ? 'Done — some batches failed, check the Status column in the CSV.'
+      : '';
+    if (failedChunks) $('status-upc').className = 'status error';
+  } catch (e) {
+    $('status-upc').textContent = 'Could not reach the server.'; $('status-upc').className='status error';
+  } finally { $('go-upc').disabled = false; }
 }
 function renderUpc(albums) {
   window._upcData = albums;
