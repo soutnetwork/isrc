@@ -427,11 +427,11 @@ async function resolveUpcRow(upc, tries = 3, fast = false) {
       return row;
     } catch (e) {
       if (e && e.rateLimited) {
-        // No point hammering — report it so the UI can tell the user to wait.
         return { upc, found: false, error: 'RATE_LIMITED', retryAfter: e.retryAfter || null };
       }
       if (attempt < tries - 1) { await sleep(backoff(attempt + 1)); continue; }
-      return { upc, found: false, error: e.message || 'failed' };
+      console.error('[UPC FAIL]', upc, '->', e && e.message);
+      return { upc, found: false, error: e.message || 'failed', detail: String(e && e.message || e) };
     }
   }
 }

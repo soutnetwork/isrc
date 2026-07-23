@@ -624,6 +624,7 @@ function renderUpc(albums) {
         : 'Not on Spotify';
       const note = isErr
         ? '<div class="upc" style="color:#F0716A">RETRY THIS ONE — result not confirmed</div>'
+          + (a.detail ? '<div class="upc" style="color:#8A8A8A">reason: '+a.detail+'</div>' : '')
         : '<div class="upc">Confirmed: this UPC is not on Spotify</div>';
       html += '<div class="album-block"><div class="album-head" '+(isErr?'style="border-color:rgba(240,113,106,0.4)"':'')+'>'+
         '<div><div class="t" '+(isErr?'style="color:#F0716A"':'')+'>'+label+'</div>'+
