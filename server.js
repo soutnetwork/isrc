@@ -121,9 +121,23 @@ async function lookupSpotify(isrc) {
 }
 
 // UPC -> album (+ its tracks with ISRCs)
+// Spotify is inconsistent about barcode padding: the same release can be stored
+// as 12, 13 or 14 digits (with or without leading zeros). Try the variants
+// before concluding the release isn't there.
+function upcVariants(upc) {
+  const bare = String(upc).replace(/\D/g, '').replace(/^0+/, '');
+  const set = new Set([String(upc), bare]);
+  [12, 13, 14].forEach(len => { if (bare.length <= len) set.add(bare.padStart(len, '0')); });
+  return [...set].filter(Boolean);
+}
+
 async function spotifyAlbumByUpc(upc) {
-  const data = await spotifyGet(`https://api.spotify.com/v1/search?q=${encodeURIComponent('upc:' + upc)}&type=album&limit=1`);
-  const albumLite = data && data.albums && data.albums.items && data.albums.items[0];
+  let albumLite = null;
+  for (const variant of upcVariants(upc)) {
+    const data = await spotifyGet(`https://api.spotify.com/v1/search?q=${encodeURIComponent('upc:' + variant)}&type=album&limit=1`);
+    const hit = data && data.albums && data.albums.items && data.albums.items[0];
+    if (hit) { albumLite = hit; break; }
+  }
   if (!albumLite) return null;
   const album = await spotifyGet(`https://api.spotify.com/v1/albums/${albumLite.id}?market=US`);
   if (!album) return null;
